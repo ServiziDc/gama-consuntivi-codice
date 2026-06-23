@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Per debug / informazioni
   getVersione: () => ipcRenderer.invoke("get-versione"),
+  getPlatform: () => ipcRenderer.invoke("get-platform"),
+  apriPaginaAggiornaMac: () => ipcRenderer.invoke("apri-pagina-aggiornamenti-mac"),
 });
 
 console.log("[Preload] electronAPI esposto");

@@ -1132,6 +1132,12 @@ ipcMain.handle("reset-cartella", async () => {
 
 ipcMain.handle("get-versione", async () => ({ versione: app.getVersion() }));
 
+ipcMain.handle("get-platform", async () => process.platform);
+
+ipcMain.handle("apri-pagina-aggiornamenti-mac", async () => {
+  shell.openExternal("https://github.com/ServiziDc/gama-consuntivi-releases/releases/latest");
+});
+
 // Salva un file Excel del mese (rigenerato da zero ogni volta)
 // Con lock cooperativo per evitare conflitti quando più PC scrivono insieme sul NAS
 // Legge le CELLE DI TESTO da un Excel esistente, riga per riga.

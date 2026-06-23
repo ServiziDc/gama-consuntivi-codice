@@ -196,6 +196,31 @@ async function caricaVersioneApp() {
   const info = document.getElementById("infoVersione");
   if (badge) badge.textContent = "v" + versione;
   if (info) info.textContent = versione;
+
+  // Mostra il pulsante aggiornamento Mac solo se siamo su Mac
+  try {
+    if (state.isElectron && window.electronAPI.getPlatform) {
+      const platform = await window.electronAPI.getPlatform();
+      if (platform === "darwin") {
+        const sezione = document.getElementById("sezioneAggiornaMac");
+        if (sezione) sezione.style.display = "block";
+        const btn = document.getElementById("btnAggiornaMac");
+        if (btn) {
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            btn.textContent = "⏳ Apertura...";
+            try {
+              await window.electronAPI.apriPaginaAggiornaMac();
+            } catch(e) { console.warn("Errore apertura pagina:", e); }
+            setTimeout(() => {
+              btn.disabled = false;
+              btn.textContent = "🔄 Controlla aggiornamenti (Mac)";
+            }, 3000);
+          });
+        }
+      }
+    }
+  } catch(e) { console.warn("Rilevamento piattaforma:", e); }
 }
 
 // ============================================================
