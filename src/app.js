@@ -196,31 +196,6 @@ async function caricaVersioneApp() {
   const info = document.getElementById("infoVersione");
   if (badge) badge.textContent = "v" + versione;
   if (info) info.textContent = versione;
-
-  // Mostra il pulsante aggiornamento Mac solo se siamo su Mac
-  try {
-    if (state.isElectron && window.electronAPI.getPlatform) {
-      const platform = await window.electronAPI.getPlatform();
-      if (platform === "darwin") {
-        const sezione = document.getElementById("sezioneAggiornaMac");
-        if (sezione) sezione.style.display = "block";
-        const btn = document.getElementById("btnAggiornaMac");
-        if (btn) {
-          btn.addEventListener("click", async () => {
-            btn.disabled = true;
-            btn.textContent = "⏳ Apertura...";
-            try {
-              await window.electronAPI.apriPaginaAggiornaMac();
-            } catch(e) { console.warn("Errore apertura pagina:", e); }
-            setTimeout(() => {
-              btn.disabled = false;
-              btn.textContent = "🔄 Controlla aggiornamenti (Mac)";
-            }, 3000);
-          });
-        }
-      }
-    }
-  } catch(e) { console.warn("Rilevamento piattaforma:", e); }
 }
 
 // ============================================================
@@ -563,28 +538,30 @@ function pathBasename(p) {
 
 // Salva un blob nella cartella scelta. Crea struttura: ROOT/NN_MESE_ANNO/(CBRE|CREVAL)/file.docx
 // Modalità: Electron (filesystem nativo) > File System Access API > Download standard
-// Carica l'ODL (PDF) abbinato al consuntivo, SE l'utente ne ha allegato uno.
-// E' facoltativo: se il campo file e' vuoto non fa niente (e in modifica lascia
-// l'ODL esistente). Se invece c'e' un file nuovo, lo salva su NAS + Drive (in
-// sostituzione dell'eventuale vecchio).
+// Salva tutti gli ODL (PDF) allegati al consuntivo (supporta più file).
+// Ogni ODL viene salvato come "[consuntivo] - ODL 1.pdf", "ODL 2.pdf", ecc.
 async function gestisciOdlUpload(consuntivoFilename, tipo, meseYYYYMM) {
   if (!state.isElectron || !window.electronAPI || !window.electronAPI.salvaOdl) return;
-  const input = document.getElementById("odlPdfFile");
-  if (!input || !input.files || input.files.length === 0) return; // nessun ODL allegato
-  const file = input.files[0];
-  try {
-    const buf = await file.arrayBuffer();
-    const arr = Array.from(new Uint8Array(buf));
-    const r = await window.electronAPI.salvaOdl(tipo, meseYYYYMM, consuntivoFilename, arr);
-    if (r && r.ok) {
-      showToast("📎 ODL allegato e caricato su Drive", "success", 4000);
-    } else {
-      showToast("⚠️ ODL non caricato: " + ((r && r.errore) || "errore"), "warn", 5000);
+  const inputs = document.querySelectorAll(".odl-pdf-input");
+  let indice = 1;
+  for (const input of inputs) {
+    if (!input.files || input.files.length === 0) continue;
+    const file = input.files[0];
+    try {
+      const buf = await file.arrayBuffer();
+      const arr = Array.from(new Uint8Array(buf));
+      const r = await window.electronAPI.salvaOdl(tipo, meseYYYYMM, consuntivoFilename, arr, indice);
+      if (r && r.ok) {
+        showToast(`📎 ODL ${indice} allegato e caricato su Drive`, "success", 4000);
+      } else {
+        showToast(`⚠️ ODL ${indice} non caricato: ` + ((r && r.errore) || "errore"), "warn", 5000);
+      }
+      indice++;
+    } catch (e) {
+      showToast(`⚠️ Errore ODL ${indice}: ` + e.message, "warn", 5000);
     }
-  } catch (e) {
-    showToast("⚠️ Errore ODL: " + e.message, "warn", 5000);
+    try { input.value = ""; } catch (e) {}
   }
-  try { input.value = ""; } catch (e) {}
 }
 
 async function salvaInCartella(blob, filename, tipo, meseYYYYMM) {
@@ -838,6 +815,23 @@ function setupForm() {
   const tariffa = document.getElementById("tariffaOraria");
   const costoMat = document.getElementById("costoMateriale");
   const smaltimento = document.getElementById("smaltimento");
+
+  // Pulsante aggiungi ODL multipli
+  const btnAggiungiOdl = document.getElementById("btnAggiungiOdl");
+  if (btnAggiungiOdl) {
+    btnAggiungiOdl.addEventListener("click", () => {
+      const container = document.getElementById("odlListaContainer");
+      if (!container) return;
+      const riga = document.createElement("div");
+      riga.className = "odl-riga";
+      riga.style.cssText = "display:flex; align-items:center; gap:8px;";
+      riga.innerHTML = `
+        <input type="file" class="odl-pdf-input" accept="application/pdf,.pdf" style="flex:1;">
+        <button type="button" class="btn-rimuovi-odl" style="background:#e53e3e;color:white;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;" onclick="this.closest('.odl-riga').remove()">✕</button>
+      `;
+      container.appendChild(riga);
+    });
+  }
 
   // Quando cambia il tipo: aggiorno categorie e preview numero
   tipo.addEventListener("change", () => {

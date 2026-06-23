@@ -26,8 +26,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("salva-consuntivo", { tipo, meseYYYYMM, filename, arrayBuffer, gruppo }),
 
   // Salva l'ODL (PDF) abbinato a un consuntivo: NAS + Drive
-  salvaOdl: (tipo, meseYYYYMM, consuntivoFilename, pdfArray) =>
-    ipcRenderer.invoke("salva-odl", { tipo, meseYYYYMM, consuntivoFilename, pdfArray }),
+  salvaOdl: (tipo, meseYYYYMM, consuntivoFilename, pdfArray, indice) =>
+    ipcRenderer.invoke("salva-odl", { tipo, meseYYYYMM, consuntivoFilename, pdfArray, indice }),
 
   // Crea le cartelle dei prossimi N mesi (per default 12)
   preparaCartelleMensili: (mesiAvanti) =>
@@ -95,8 +95,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Per debug / informazioni
   getVersione: () => ipcRenderer.invoke("get-versione"),
-  getPlatform: () => ipcRenderer.invoke("get-platform"),
-  apriPaginaAggiornaMac: () => ipcRenderer.invoke("apri-pagina-aggiornamenti-mac"),
 });
 
 console.log("[Preload] electronAPI esposto");

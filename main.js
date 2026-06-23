@@ -1132,12 +1132,6 @@ ipcMain.handle("reset-cartella", async () => {
 
 ipcMain.handle("get-versione", async () => ({ versione: app.getVersion() }));
 
-ipcMain.handle("get-platform", async () => process.platform);
-
-ipcMain.handle("apri-pagina-aggiornamenti-mac", async () => {
-  shell.openExternal("https://github.com/ServiziDc/gama-consuntivi-releases/releases/latest");
-});
-
 // Salva un file Excel del mese (rigenerato da zero ogni volta)
 // Con lock cooperativo per evitare conflitti quando più PC scrivono insieme sul NAS
 // Legge le CELLE DI TESTO da un Excel esistente, riga per riga.
@@ -1477,14 +1471,15 @@ ipcMain.handle("get-cartella-accettati", async () => {
 // === Salva l'ODL (PDF) di un consuntivo: NAS (stessa cartella del Word) + Drive (abbinato) ===
 // Il nome dell'ODL = nome del consuntivo + " - ODL.pdf", cosi' la pagina li abbina da soli.
 // Funziona anche per la SOSTITUZIONE: cancella il vecchio su Drive e ricarica.
-ipcMain.handle("salva-odl", async (event, { tipo, meseYYYYMM, consuntivoFilename, pdfArray }) => {
+ipcMain.handle("salva-odl", async (event, { tipo, meseYYYYMM, consuntivoFilename, pdfArray, indice }) => {
   const s = leggiImpostazioni();
   if (!s.cartellaRoot) return { ok: false, errore: "Cartella root non impostata" };
   try {
     const meseFolder = nomeCartellaMese(meseYYYYMM);
     const tipoFolder = (tipo || "").toUpperCase();
     const base = String(consuntivoFilename || "").replace(/\.docx$/i, "");
-    const odlName = (base + " - ODL.pdf").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
+    const suffisso = (indice && indice > 1) ? ` - ODL ${indice}.pdf` : " - ODL.pdf";
+    const odlName = (base + suffisso).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
     const buffer = Buffer.from(pdfArray);
 
     // NAS: stessa cartella del consuntivo (root/MESE/TIPO). Sovrascrive se gia' presente.

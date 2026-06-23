@@ -191,12 +191,18 @@
             </div>
           </div>
 
-          <!-- Carica ODL (PDF) - facoltativo, vale per tutti i tipi di consuntivo -->
+          <!-- Carica ODL (PDF) - multipli, facoltativi -->
           <div class="form-row">
             <div class="form-field full-width">
-              <label for="odlPdfFile">📎 Carica ODL (PDF) — facoltativo</label>
-              <input type="file" id="odlPdfFile" accept="application/pdf,.pdf">
-              <small id="odlPdfNome">Allega qui il PDF dell'ODL: verrà salvato sul NAS e su Drive insieme al consuntivo.</small>
+              <label>📎 Carica ODL (PDF) — facoltativi</label>
+              <div id="odlListaContainer" style="display:flex; flex-direction:column; gap:8px; margin-bottom:6px;">
+                <div class="odl-riga" style="display:flex; align-items:center; gap:8px;">
+                  <input type="file" class="odl-pdf-input" accept="application/pdf,.pdf" style="flex:1;">
+                  <button type="button" class="btn-rimuovi-odl" style="background:#e53e3e;color:white;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;" onclick="this.closest('.odl-riga').remove()">✕</button>
+                </div>
+              </div>
+              <button type="button" id="btnAggiungiOdl" class="btn btn-secondary" style="font-size:13px; padding:5px 14px;">➕ Aggiungi altro ODL</button>
+              <small style="display:block; margin-top:6px;">Allega i PDF degli ODL: verranno salvati sul NAS e su Drive insieme al consuntivo.</small>
             </div>
           </div>
 
@@ -927,15 +933,9 @@ P.IVA 00124140211</textarea>
           </div>
           <div class="info-riga">
             <span class="info-label">Note versione:</span>
-            <span class="info-valore">🍎 Aggiunta sezione "Controlla aggiornamenti" per Mac nelle impostazioni. (v3.21.4)</span>
+            <span class="info-valore">➕ ODL multipli: ora puoi allegare più PDF ODL per ogni consuntivo. 🍎 Aggiunto pulsante aggiornamento Mac nelle impostazioni. (v3.21.5)</span>
           </div>
           <p class="info-nota">L'app controlla automaticamente la presenza di aggiornamenti all'avvio. Se ne trova uno, lo installa da solo e si riavvia.</p>
-          <div id="sezioneAggiornaMac" style="display:none; margin-top:16px;">
-            <button id="btnAggiornaMac" class="btn btn-primary" style="font-size:15px; padding:10px 24px;">
-              🔄 Controlla aggiornamenti (Mac)
-            </button>
-            <p style="font-size:12px; color:#888; margin-top:8px;">Apre la pagina GitHub per scaricare l'ultima versione Mac.</p>
-          </div>
         </div>
       </div>
     </div>
