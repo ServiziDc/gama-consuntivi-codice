@@ -897,6 +897,14 @@ function setupForm() {
 
   document.getElementById("btnPreview").addEventListener("click", mostraPreview);
 
+  // Pulsante anteprima PDF consuntivo
+  const btnAnteprimaCons = document.getElementById("btnAnteprimaPdfConsuntivo");
+  if (btnAnteprimaCons) {
+    btnAnteprimaCons.addEventListener("click", async () => {
+      await salvaAnteprimaPdf("consuntivo");
+    });
+  }
+
   // Bottone "Annulla modifica"
   const btnAnnulla = document.getElementById("btnAnnullaModifica");
   if (btnAnnulla) {
@@ -1198,6 +1206,59 @@ function calcolaTotaleConsuntivo(c) {
   const totVociMan = (c.vociManuali || []).reduce((s, v) => s + (v.importo || 0), 0);
   const totMatExtra = (c.materialiExtra || []).reduce((s, m) => s + (m.costo || 0), 0);
   return c.ore * c.tariffaOraria + costoOreExtra + c.costoMateriale + c.smaltimento + extraFissi + totVociMan + totMatExtra;
+}
+
+// ============================================================
+// ANTEPRIMA PDF SUL DESKTOP
+// ============================================================
+async function salvaAnteprimaPdf(tipo) {
+  if (!state.isElectron || !window.electronAPI || !window.electronAPI.salvaAnteprima) {
+    showToast("⚠️ Funzione disponibile solo nell'app desktop", "warn", 4000);
+    return;
+  }
+  const btn = document.getElementById(tipo === "preventivo" ? "btnAnteprimaPdfPreventivo" : "btnAnteprimaPdfConsuntivo");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Generazione..."; }
+  try {
+    let blob, filename;
+    if (tipo === "preventivo") {
+      // Raccoglie dati preventivo senza salvare
+      const destinatario = (document.getElementById("prevDestinatario").value || "").trim();
+      const dataDocumento = document.getElementById("prevData").value;
+      const offerte = leggiOffertePreventivo();
+      if (!dataDocumento) throw new Error("Inserisci la data del documento");
+      if (!offerte.length || !offerte[0].oggetto) throw new Error("Aggiungi almeno un'offerta con oggetto");
+      const primaOff = offerte[0];
+      const importoTot = offerte.reduce((s, o) => s + (o.importo || 0), 0);
+      const c = {
+        tipo: "preventivo", numero: "ANTEPRIMA", destinatario, dataDocumento, offerte,
+        oggetto: primaOff.oggetto, elenco: primaOff.elenco || "",
+        importo: importoTot, pagamenti: primaOff.pagamenti || "",
+        mese: getMonthFromDate(dataDocumento)
+      };
+      const r = await buildDocx(c);
+      blob = r.blob;
+      filename = "ANTEPRIMA - Preventivo " + destinatario + " " + dataDocumento + ".docx";
+    } else {
+      if (!validaForm()) throw new Error("Compila i campi obbligatori");
+      const tipo = document.getElementById("tipoConsuntivo").value;
+      const c = costruisciConsuntivoDaForm(0, tipo);
+      c.numero = "ANTEPRIMA";
+      const r = await buildDocx(c);
+      blob = r.blob;
+      filename = "ANTEPRIMA - " + r.filename;
+    }
+    const arrayBuffer = await blob.arrayBuffer();
+    const r = await window.electronAPI.salvaAnteprima(filename, Array.from(new Uint8Array(arrayBuffer)));
+    if (r && r.ok) {
+      showToast("📄 Anteprima PDF salvata sul Desktop!", "success", 5000);
+    } else {
+      showToast("⚠️ " + ((r && r.errore) || "Errore generazione PDF"), "warn", 6000);
+    }
+  } catch(e) {
+    showToast("⚠️ Errore: " + e.message, "warn", 5000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "📄 Salva anteprima PDF"; }
+  }
 }
 
 // ============================================================
@@ -1675,6 +1736,14 @@ function setupPreventivoTab() {
     e.preventDefault();
     await generaPreventivo();
   });
+
+  // Pulsante anteprima PDF preventivo
+  const btnAnteprima = document.getElementById("btnAnteprimaPdfPreventivo");
+  if (btnAnteprima) {
+    btnAnteprima.addEventListener("click", async () => {
+      await salvaAnteprimaPdf("preventivo");
+    });
+  }
 
   const btnAnn = document.getElementById("btnAnnullaModificaPrev");
   if (btnAnn) btnAnn.addEventListener("click", annullaModificaPreventivo);

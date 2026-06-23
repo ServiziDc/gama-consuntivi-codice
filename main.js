@@ -1132,7 +1132,32 @@ ipcMain.handle("reset-cartella", async () => {
 
 ipcMain.handle("get-versione", async () => ({ versione: app.getVersion() }));
 
-// Salva un file Excel del mese (rigenerato da zero ogni volta)
+ipcMain.handle("get-platform", async () => process.platform);
+
+ipcMain.handle("apri-pagina-aggiornamenti-mac", async () => {
+  shell.openExternal("https://github.com/ServiziDc/gama-consuntivi-releases/releases/latest");
+});
+
+// Genera un PDF di anteprima dal docx e lo salva sul Desktop
+ipcMain.handle("salva-anteprima-pdf-desktop", async (event, { filename, arrayBuffer }) => {
+  try {
+    const desktopDir = app.getPath("desktop");
+    const tmpDocx = path.join(app.getPath("temp"), "anteprima_tmp_" + Date.now() + ".docx");
+    const nomePdf = "ANTEPRIMA - " + filename.replace(/\.docx$/i, "") + ".pdf";
+    const pdfPath = path.join(desktopDir, nomePdf);
+    const buffer = Buffer.from(arrayBuffer);
+    await fsp.writeFile(tmpDocx, buffer);
+    const risultato = await convertiDocxInPdf(tmpDocx, pdfPath);
+    try { await fsp.unlink(tmpDocx); } catch(e) {}
+    if (risultato.ok) {
+      return { ok: true, pdfPath };
+    } else {
+      return { ok: false, errore: risultato.errore || "Conversione fallita" };
+    }
+  } catch(e) {
+    return { ok: false, errore: e.message };
+  }
+});
 // Con lock cooperativo per evitare conflitti quando più PC scrivono insieme sul NAS
 // Legge le CELLE DI TESTO da un Excel esistente, riga per riga.
 // Serve per importare in Firebase le modifiche fatte a mano nell'Excel.
