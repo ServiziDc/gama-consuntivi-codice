@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gama Service - Generatore Consuntivi CBRE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <header>
+      <div class="header-logo-wrap">
+        <img id="appLogo" class="app-logo" alt="Gama Service" />
+        <h1>📋 Generatore Consuntivi CBRE <span id="appVersionBadge" class="version-badge">v—</span></h1>
+      </div>
+      <div class="status-bar">
+        <span id="connectionStatus" class="status-disconnected">⚫ Connessione...</span>
+        <span class="mese-corrente">Mese corrente: <strong id="meseCorrente">—</strong></span>
+      </div>
+    </header>
+
+    <!-- Banner cartella di salvataggio -->
+    <div class="banner-cartella">
+      <div class="cartella-info">
+        <span class="label">📁 Cartella di salvataggio:</span>
+        <span id="cartellaStato" class="cartella-stato non-scelta">Nessuna cartella selezionata</span>
+      </div>
+      <button id="btnSelCartella" class="btn btn-secondary">📂 Scegli cartella</button>
+    </div>
+
+    <!-- Banner aggiornamento (nascosto di default) -->
+    <div id="bannerUpdate" class="banner-update hidden">
+      <span id="bannerUpdateText">🔄 Controllo aggiornamenti...</span>
+    </div>
+
+    <!-- Banner modalità OFFLINE (nascosto di default, appare solo se NAS giù) -->
+    <div id="bannerOffline" class="banner-offline hidden">
+      <div class="offline-info">
+        <span class="offline-icon">⚠️</span>
+        <span class="offline-text">
+          <strong>NAS non raggiungibile</strong> - i file vengono salvati temporaneamente in locale.
+          Si sincronizzeranno automaticamente quando il NAS tornerà online.
+        </span>
+      </div>
+      <div class="offline-actions">
+        <span id="bannerOfflineCount" class="offline-count"></span>
+        <button id="btnRiprovaNas" class="btn btn-warn">🔄 Riprova</button>
+      </div>
+    </div>
+
+    <!-- Banner numero consuntivo prossimo -->
+    <div class="banner-numero">
+      <div class="numeri-doppi">
+        <div class="numero-card numero-cbre">
+          <div class="label">Prossimo CBRE</div>
+          <div class="valore" id="prossimoNumeroCbre">—</div>
+        </div>
+        <div class="numero-card numero-creval">
+          <div class="label">Prossimo CREVAL</div>
+          <div class="valore" id="prossimoNumeroCreval">—</div>
+        </div>
+        <div class="numero-card numero-preventivo">
+          <div class="label">Prossimo PREVENTIVO</div>
+          <div class="valore" id="prossimoNumeroPreventivoCard">—</div>
+        </div>
+        <div class="numero-card numero-dussmann">
+          <div class="label">DUSSMANN NHOOD</div>
+          <div class="valore" id="cardDussNhood">—</div>
+        </div>
+        <div class="numero-card numero-dussmann">
+          <div class="label">DUSSMANN EDILE</div>
+          <div class="valore" id="cardDussEdile">—</div>
+        </div>
+        <div class="numero-card numero-dussmann">
+          <div class="label">DUSSMANN IMPIANT.</div>
+          <div class="valore" id="cardDussImpiantistica">—</div>
+        </div>
+      </div>
+      <div class="info-utente">
+        <label for="nomeOperatore">Tuo nome:</label>
+        <input type="text" id="nomeOperatore" placeholder="es. Mario" maxlength="30">
+      </div>
+    </div>
+
+    <!-- Tab Navigazione -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="nuovo">➕ Nuovo Consuntivo</button>
+      <button class="tab-btn" data-tab="preventivo">📝 Nuovo Preventivo</button>
+      <button class="tab-btn" data-tab="dussmann">🏢 Nuovo DUSSMANN</button>
+      <button class="tab-btn" data-tab="storico">📚 Storico Mese</button>
+      <button class="tab-btn" data-tab="excel">📊 File Excel</button>
+      <button class="tab-btn" data-tab="impostazioni">⚙️ Impostazioni</button>
+    </div>
+
+    <!-- Tab 1: Nuovo Consuntivo -->
+    <div class="tab-content active" id="tab-nuovo">
+      <form id="formConsuntivo" class="form-consuntivo">
+
+        <div class="form-section section-tipo">
+          <h3>🏷️ Tipo consuntivo</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="tipoConsuntivo">Tipo *</label>
+              <select id="tipoConsuntivo" required>
+                <option value="">— Seleziona tipo —</option>
+                <option value="cbre">CBRE</option>
+                <option value="creval">CREVAL</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Numero che verrà assegnato</label>
+              <input type="text" id="numeroAssegnatoPreview" readonly class="readonly totale-grande">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>📍 Dati intervento</h3>
+
+          <div class="form-row" id="rowSezioneExcel" style="display:none">
+            <div class="form-field full-width">
+              <label for="sezioneExcel">📋 Sezione del file Excel CBRE *</label>
+              <select id="sezioneExcel">
+                <option value="">— Scegli la sezione del file Excel —</option>
+                <option value="bnl">RIPILOGO ATTIVITA' BNL + FINDOMESTIC</option>
+                <option value="torre_diamante">RIEPILOGO ATTIVITA' TORRE DIAMANTE/SMERALDO</option>
+                <option value="mediobanca">RIPILOGO ATTIVITA' MEDIOBANCA + BCC + BENETTON + RMA</option>
+                <option value="ceva">RIPILOGO ATTIVITA' CEVA LOGISTICS ITALIA</option>
+                <option value="bdb">RIEPOLOGO ATTIVITA' BDB</option>
+                <option value="padovani">RIEPILOGO ATTIVITA' PADOVANI</option>
+                <option value="keller">RIEPILOGO ATTIVITA' KELLER</option>
+              </select>
+              <small>Scegli in quale sezione arancione del file Excel mensile va inserita la riga di questo consuntivo</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="categoria">Categoria intervento *</label>
+              <select id="categoria" required>
+                <option value="">— Seleziona prima il tipo —</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="dataDocumento">Data documento *</label>
+              <input type="date" id="dataDocumento" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="sede">Sede / Agenzia / Indirizzo *</label>
+              <input type="text" id="sede" placeholder="es. BNL VIA EMILIA VOGHERA" required>
+            </div>
+          </div>
+
+          <!-- Campi aggiuntivi solo per CREVAL -->
+          <div id="rowCrevalProvinciaRegione" class="form-row" style="display:none">
+            <div class="form-field">
+              <label for="crevalProvincia">Provincia *</label>
+              <input type="text" id="crevalProvincia" placeholder="es. MI, BG, BS, CO" maxlength="3">
+              <small>Sigla della provincia (2-3 lettere)</small>
+            </div>
+            <div class="form-field">
+              <label for="crevalRegione">Regione *</label>
+              <input type="text" id="crevalRegione" placeholder="es. LOMBARDIA" value="LOMBARDIA">
+            </div>
+          </div>
+
+          <div id="rowCrevalTicketOdl" class="form-row" style="display:none">
+            <div class="form-field">
+              <label for="crevalTicket">Ticket (numero con C)</label>
+              <input type="text" id="crevalTicket" placeholder="es. C61973267 (lascia vuoto se non c'è)">
+            </div>
+            <div class="form-field">
+              <label for="crevalOdlNumero">ODL numero (opzionale)</label>
+              <input type="text" id="crevalOdlNumero" placeholder="es. 26010163T (lascia vuoto se non c'è)">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="dataIntervento">Data intervento (testo libero) *</label>
+              <input type="text" id="dataIntervento" placeholder="es. 30/04/2026 oppure 08-09/05/2026" required>
+              <small>Scrivi come va sul documento (singola, range, multipla...)</small>
+            </div>
+            <div class="form-field" id="rowOdlCbre">
+              <label for="odl">ODL (codice)</label>
+              <input type="text" id="odl" placeholder="es. C61874527 (lascia vuoto se non c'è)">
+            </div>
+          </div>
+
+          <!-- Carica ODL (PDF) - facoltativo, vale per tutti i tipi di consuntivo -->
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="odlPdfFile">📎 Carica ODL (PDF) — facoltativo</label>
+              <input type="file" id="odlPdfFile" accept="application/pdf,.pdf">
+              <small id="odlPdfNome">Allega qui il PDF dell'ODL: verrà salvato sul NAS e su Drive insieme al consuntivo.</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="descrizione">Descrizione lavoro *</label>
+              <textarea id="descrizione" rows="3" placeholder="es. Eseguita manutenzione come da scheda allegata." required></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>💰 Economico</h3>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="ore">Ore</label>
+              <input type="number" id="ore" step="0.5" min="0" placeholder="es. 6 o 4.5">
+            </div>
+            <div class="form-field">
+              <label for="tariffaOraria">Tariffa oraria (€)</label>
+              <input type="number" id="tariffaOraria" step="0.01" min="0" value="28" required>
+              <small>Standard: 28€/h. Cambia se cliente diverso (es. RMA = 33€)</small>
+            </div>
+            <div class="form-field">
+              <label>Costo ore (calcolato)</label>
+              <input type="text" id="costoOre" readonly class="readonly">
+            </div>
+          </div>
+
+          <div class="form-row" style="border-top:1px dashed #d1d5db;padding-top:12px;margin-top:4px">
+            <div class="form-field">
+              <label for="oreExtra">Ore extra (opzionale)</label>
+              <input type="number" id="oreExtra" step="0.5" min="0" placeholder="lascia vuoto se non serve">
+              <small>Seconda riga ore, es. a tariffa diversa</small>
+            </div>
+            <div class="form-field">
+              <label for="tariffaExtra">Tariffa ore extra (€)</label>
+              <input type="number" id="tariffaExtra" step="0.01" min="0" placeholder="es. 33">
+            </div>
+            <div class="form-field">
+              <label>Costo ore extra (calcolato)</label>
+              <input type="text" id="costoOreExtra" readonly class="readonly">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="descrMateriale">Descrizione materiale (opzionale)</label>
+              <input type="text" id="descrMateriale" placeholder="es. Kit sanificazione + sgrassatore  (lascia vuoto se vuoi solo 'MATERIALE = € X')">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field full-width">
+              <div id="materialiExtraContainer"></div>
+              <button type="button" id="btnAggiungiMateriale" class="btn btn-secondary" style="margin-top:2px">➕ Aggiungi materiale</button>
+              <input type="hidden" id="materialiExtraJson" value="[]">
+              <small>Ogni click aggiunge un'altra coppia descrizione + costo materiale</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="costoMateriale">Costo materiale (€)</label>
+              <input type="number" id="costoMateriale" step="0.01" min="0" value="0">
+            </div>
+            <div class="form-field">
+              <label for="smaltimento">Smaltimento (€)</label>
+              <input type="number" id="smaltimento" step="0.01" value="0">
+              <small>Può essere anche negativo (es. -1090)</small>
+            </div>
+            <div class="form-field">
+              <label>TOTALE (€)</label>
+              <input type="text" id="totale" readonly class="readonly totale-grande">
+              <small><label style="font-weight:normal;cursor:pointer;display:flex;align-items:center;gap:6px;margin-top:4px"><input type="checkbox" id="totaleManuale" style="width:auto;margin:0"> Totale a mano (scrivilo tu)</label></small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="noloPiattaforma">Nolo piattaforma (€)</label>
+              <input type="number" id="noloPiattaforma" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="form-field">
+              <label for="noloTrabattello">Nolo trabattello (€)</label>
+              <input type="number" id="noloTrabattello" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="form-field">
+              <label for="praticaFgas">Pratica F-Gas (€)</label>
+              <input type="number" id="praticaFgas" step="0.01" min="0" placeholder="0">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label>➕ Voci aggiuntive manuali (descrizione + importo)</label>
+              <div id="vociManualiContainer"></div>
+              <button type="button" id="btnAggiungiVoce" class="btn btn-secondary" style="margin-top:6px">➕ Aggiungi voce</button>
+              <input type="hidden" id="vociManualiJson" value="[]">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>💳 Pagamenti (opzionale)</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="pagamentiTipo">Termine pagamento</label>
+              <select id="pagamentiTipo">
+                <option value="">Nessuno (non compare sul documento)</option>
+                <option value="30">30 giorni data fattura</option>
+                <option value="60">60 giorni data fattura</option>
+                <option value="90">90 giorni data fattura</option>
+                <option value="120">120 giorni data fattura</option>
+                <option value="ALTRO">Altro (specifica sotto)</option>
+              </select>
+              <small>Per CREVAL di solito è 60 giorni. Lascia "Nessuno" per non far apparire nulla.</small>
+            </div>
+            <div class="form-field" id="rowPagamentiCustom" style="display:none">
+              <label for="pagamentiCustom">Testo personalizzato</label>
+              <input type="text" id="pagamentiCustom" placeholder="es. Bonifico anticipato, Rimessa diretta...">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>📝 Nota interna Excel (opzionale)</h3>
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="notaExcel">Nota nel riepilogo Excel</label>
+              <input type="text" id="notaExcel" placeholder="es. MANUTENZIONE, ASSISTENZA AL TECNICO DI FRANCO, ecc.">
+              <small>Va in colonna H del file Excel. Non compare sul documento .docx.</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <label class="checkbox-solo-excel" title="Se attivo, aggiunge la riga al file Excel ma NON crea il documento Word/PDF">
+            <input type="checkbox" id="soloExcel"> 📊 Solo Excel (non creare documento)
+          </label>
+          <label class="checkbox-solo-excel" title="Dopo aver creato il PDF, apre una nuova email con il PDF già allegato (richiede Thunderbird)">
+            <input type="checkbox" id="inviaEmail"> 📧 Apri email col PDF dopo la creazione
+          </label>
+          <button type="button" id="btnAnnullaModifica" class="btn btn-secondary hidden" style="background:#ef4444;color:white">✖ Annulla modifica</button>
+          <button type="button" id="btnPreview" class="btn btn-secondary">👁️ Anteprima</button>
+          <button type="submit" class="btn btn-primary">✅ Genera consuntivo <span id="numeroBtn">—</span></button>
+        </div>
+      </form>
+
+      <!-- Area preview -->
+      <div id="previewArea" class="preview-area hidden">
+        <h3>Anteprima documento</h3>
+        <div id="previewContent" class="preview-content"></div>
+      </div>
+    </div>
+
+    <!-- Tab Preventivo -->
+    <div class="tab-content" id="tab-preventivo">
+      <form id="formPreventivo" class="form-consuntivo">
+        <h2>📝 Nuovo Preventivo (Offerta)</h2>
+
+        <div class="banner-numero">
+          <span>Numero preventivo che verrà assegnato:</span>
+          <strong id="prevNumeroPreview">—</strong>
+        </div>
+
+        <div class="form-section">
+          <h3>Intestazione / Destinatario</h3>
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="prevDestinatariSalvati">📋 Destinatari salvati (scegli per riempire)</label>
+              <select id="prevDestinatariSalvati">
+                <option value="">— Scegli un destinatario salvato —</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="prevDestinatario">Destinatario (modificabile)</label>
+              <textarea id="prevDestinatario" rows="2">CBRE GWS TECHNICAL DIVISION S.r.l.
+VIA VERROTTI 65015 MONTESILVANO (PE)</textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Dati offerta</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="prevData">Data documento</label>
+              <input type="date" id="prevData" required>
+            </div>
+          </div>
+          <!-- Blocchi offerte (ripetibili): ognuno diventa una pagina del documento -->
+          <div id="prevBlocchi"></div>
+          <button type="button" id="btnAggiungiPreventivo" class="btn btn-secondary" style="margin-top:4px">➕ Aggiungi un'altra offerta a questo documento</button>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" id="btnAnnullaModificaPrev" class="btn btn-secondary hidden" style="background:#ef4444;color:white">✖ Annulla modifica</button>
+          <button type="submit" class="btn btn-primary">✅ Genera preventivo <span id="prevNumeroBtn">—</span></button>
+        </div>
+      </form>
+
+      <div class="storico-dedicato" style="margin-top:24px;border-top:2px solid #e5e7eb;padding-top:16px">
+        <h3>📚 Storico Preventivi (mese corrente)</h3>
+        <div id="prevStoricoStats" class="storico-stats"></div>
+        <table class="storico-tabella">
+          <thead>
+            <tr>
+              <th>NR</th><th>Data</th><th>Destinatario</th>
+              <th>Oggetto</th><th>Importo</th><th>Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="prevStoricoBody">
+            <tr><td colspan="6" class="empty">Nessun preventivo questo mese.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab DUSSMANN -->
+    <div class="tab-content" id="tab-dussmann">
+      <form id="formDussmann" class="form-consuntivo">
+        <h2>🏢 Nuovo Consuntivo DUSSMANN</h2>
+
+        <div class="form-section">
+          <h3>🏷️ Tipo</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="dussTipo">Tipo consuntivo *</label>
+              <select id="dussTipo" required>
+                <option value="distacco">QUOTA DISTACCO (con dettaglio costo)</option>
+                <option value="servizio">QUOTA DI SERVIZIO (differenza)</option>
+                <option value="rimborso">RIMBORSO (elenco voci)</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="dussGruppo">Gruppo / Cartella *</label>
+              <select id="dussGruppo" required>
+                <option value="NHOOD">NHOOD</option>
+                <option value="SQUADRA EDILE">SQUADRA EDILE \ FIBERCOP</option>
+                <option value="SQUADRA IMPIANTISTICA">SQUADRA IMPIANTISTICA \ FIBERCOP</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Numero che verrà assegnato</label>
+              <input type="text" id="dussNumeroPreview" readonly class="readonly">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>🏢 Destinatario</h3>
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="dussDestinatariSalvati">📋 Destinatari salvati (scegli per riempire)</label>
+              <select id="dussDestinatariSalvati">
+                <option value="">— Scegli un destinatario salvato —</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="dussDestinatario">Destinatario (modificabile)</label>
+              <textarea id="dussDestinatario" rows="4">DUSSMANN SERVICE SRL
+VIA SAN GREGORIO,55
+20124 MILANO (MI)
+P.IVA 00124140211</textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>📋 Dati documento</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="dussData">Data documento *</label>
+              <input type="date" id="dussData" required>
+            </div>
+            <div class="form-field">
+              <label for="dussPeriodo">Periodo (testo nelle ore)</label>
+              <input type="text" id="dussPeriodo" placeholder="es. MAGGIO o LAVORATIVE MAGGIO">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field full-width">
+              <label for="dussOggetto">Oggetto (scrivilo per esteso) *</label>
+              <textarea id="dussOggetto" rows="3" placeholder="es. CONTABILITA' CONSUNTIVO QUOTA DISTACCO PERSONALE TECNICO ... ATTIVITA' ... NEL MESE DI MAGGIO 2026"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>💰 Economico</h3>
+          <div class="form-row">
+            <div class="form-field" id="dussOreWrap">
+              <label for="dussOre">Ore totali *</label>
+              <input type="number" id="dussOre" step="1" min="0" placeholder="es. 230">
+            </div>
+            <div class="form-field">
+              <label>Totale (calcolato)</label>
+              <input type="text" id="dussTotale" readonly class="readonly totale-grande">
+            </div>
+          </div>
+
+          <!-- Campi DISTACCO -->
+          <div id="dussDistaccoFields">
+            <p style="color:#6b7280;font-size:13px;margin:8px 0">Dettaglio costo distacco (€/ora). Il programma somma e calcola il costo orario totale.</p>
+            <div class="form-row">
+              <div class="form-field"><label>Retribuzione base</label><input type="number" id="dussRetribuzione" step="0.01" value="9.01"></div>
+              <div class="form-field"><label>Tredicesima</label><input type="number" id="dussTredicesima" step="0.01" value="0.78"></div>
+              <div class="form-field"><label>Festività</label><input type="number" id="dussFestivita" step="0.01" value="0.08"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-field"><label>Ex festività</label><input type="number" id="dussExFestivita" step="0.01" value="0.09"></div>
+              <div class="form-field"><label>TFR</label><input type="number" id="dussTfr" step="0.01" value="0.72"></div>
+              <div class="form-field"><label>Addizionale INAIL</label><input type="number" id="dussAddInail" step="0.01" value="0.09"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-field"><label>INAIL</label><input type="number" id="dussInail" step="0.01" value="3.41"></div>
+              <div class="form-field"><label>INPS - Industria</label><input type="number" id="dussInps" step="0.01" value="3.89"></div>
+              <div class="form-field"><label>Trattenute prev. (può essere negativo)</label><input type="number" id="dussTrattenute" step="0.01" value="-0.04"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-field"><label>TOTALE COSTO ORARIO (calcolato)</label><input type="text" id="dussCostoOrario" readonly class="readonly"></div>
+            </div>
+          </div>
+
+          <!-- Campi SERVIZIO -->
+          <div id="dussServizioFields" style="display:none">
+            <p style="color:#6b7280;font-size:13px;margin:8px 0">Quota servizio = costo pattuito − costo distacco. Il programma calcola la differenza.</p>
+            <div class="form-row">
+              <div class="form-field"><label>Costo distacco (€/ora)</label><input type="number" id="dussCostoDistacco" step="0.01" value="18.03"></div>
+              <div class="form-field"><label>Costo orario pattuito (€/ora)</label><input type="number" id="dussCostoPattuito" step="0.01" value="28.00"></div>
+              <div class="form-field"><label>Quota servizio (calcolata)</label><input type="text" id="dussQuota" readonly class="readonly"></div>
+            </div>
+          </div>
+
+          <!-- Campi RIMBORSO -->
+          <div id="dussRimborsoFields" style="display:none">
+            <p style="color:#6b7280;font-size:13px;margin:8px 0">Elenco voci del rimborso. Una riga per ogni voce (descrizione + importo). Il programma fa la somma.</p>
+            <div id="dussRigheRimborso"></div>
+            <button type="button" id="btnAggiungiVoceRimborso" class="btn btn-secondary" style="margin-top:8px">➕ Aggiungi voce</button>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="dussPagamenti">Pagamenti</label>
+              <input type="text" id="dussPagamenti" placeholder="es. BB 60GG DFFM">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" id="btnAnnullaModificaDuss" class="btn btn-secondary hidden" style="background:#ef4444;color:white">✖ Annulla modifica</button>
+          <button type="submit" class="btn btn-primary">✅ Genera DUSSMANN <span id="dussNumeroBtn">—</span></button>
+        </div>
+      </form>
+
+      <div class="storico-dedicato" style="margin-top:24px;border-top:2px solid #e5e7eb;padding-top:16px">
+        <h3>📚 Storico DUSSMANN (mese corrente)</h3>
+        <div id="dussStoricoStats" class="storico-stats"></div>
+        <table class="storico-tabella">
+          <thead>
+            <tr>
+              <th>NR</th><th>Tipo</th><th>Gruppo</th><th>Data</th>
+              <th>Oggetto</th><th>Ore</th><th>Totale</th><th>Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="dussStoricoBody">
+            <tr><td colspan="8" class="empty">Nessun DUSSMANN questo mese.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 2: Storico -->
+    <div class="tab-content" id="tab-storico">
+      <div class="storico-header">
+        <h2>Consuntivi del mese</h2>
+        <div class="storico-controls">
+          <label for="filtroMese">Mese:</label>
+          <input type="month" id="filtroMese">
+          <label for="filtroTipo">Tipo:</label>
+          <select id="filtroTipo">
+            <option value="">Tutti</option>
+            <option value="cbre">CBRE</option>
+            <option value="creval">CREVAL</option>
+          </select>
+          <button id="btnAggiornaStorico" class="btn btn-secondary">🔄 Aggiorna</button>
+          <button id="btnScaricaZipMese" class="btn btn-primary">📦 Scarica ZIP mese</button>
+          <button id="btnCaricaMeseDrive" class="btn btn-secondary" title="Carica su Google Drive i documenti CBRE e CREVAL già esistenti di questo mese">☁️ Carica mese su Drive</button>
+        </div>
+        <div class="storico-controls" style="margin-top:10px">
+          <label for="cercaOdl">🔍 Cerca per ODL:</label>
+          <input type="text" id="cercaOdl" placeholder="Inserisci ODL o parte di esso..." style="min-width:220px">
+          <button id="btnCercaOdl" class="btn btn-secondary">Cerca</button>
+          <button id="btnResetCerca" class="btn btn-secondary">✖ Azzera ricerca</button>
+        </div>
+      </div>
+      <div class="storico-stats" id="storicoStats"></div>
+      <div class="storico-tabella-wrapper">
+        <table class="storico-tabella" id="tabellaStorico">
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>NR</th>
+              <th>Data</th>
+              <th>Categoria</th>
+              <th>Sede</th>
+              <th>Intervento</th>
+              <th>ODL</th>
+              <th>Ore</th>
+              <th>Totale €</th>
+              <th>Operatore</th>
+              <th>Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="storicoBody">
+            <tr><td colspan="11" class="empty">Caricamento...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 3: File Excel -->
+    <div class="tab-content" id="tab-excel">
+      <h2>📊 File Excel CBRE del mese</h2>
+
+      <div class="excel-section">
+        <h3>📌 Come funziona</h3>
+        <p>
+          Il file Excel CBRE viene <strong>generato e aggiornato automaticamente</strong> nella cartella del mese ogni volta che crei un nuovo consuntivo CBRE.
+          Trovi il file qui:
+        </p>
+        <div class="excel-stato" id="excelPath">—</div>
+        <div style="margin-top:12px">
+          <button id="btnApriExcel" class="btn btn-primary">🗂️ Apri cartella del mese</button>
+          <button id="btnForzaExcel" class="btn btn-secondary">🔄 Rigenera Excel del mese</button>
+          <button id="btnScaricaExcel" class="btn btn-secondary">⬇️ Scarica copia (download)</button>
+        </div>
+      </div>
+
+      <div class="excel-section">
+        <h3>📋 Stato attuale</h3>
+        <div id="excelStato" class="excel-stato">—</div>
+      </div>
+
+      <div class="excel-section">
+        <h3>✍️ Righe manuali nell'Excel</h3>
+        <p>Qui puoi aggiungere righe <strong>direttamente nel file Excel</strong> (non creano nessun documento Word/PDF). Scegli la sezione e il mese, compila i campi e la riga comparirà nel riepilogo. Le righe restano salvate anche se l'Excel viene rigenerato.</p>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="manSezione">Sezione del riepilogo</label>
+            <select id="manSezione">
+              <option value="">— Scegli la sezione —</option>
+              <option value="bnl">RIPILOGO ATTIVITA' BNL + FINDOMESTIC</option>
+              <option value="torre_diamante">RIEPILOGO ATTIVITA' TORRE DIAMANTE/SMERALDO</option>
+              <option value="mediobanca">RIPILOGO ATTIVITA' MEDIOBANCA + BCC + BENETTON + RMA</option>
+              <option value="ceva">RIPILOGO ATTIVITA' CEVA LOGISTICS ITALIA</option>
+              <option value="bdb">RIEPOLOGO ATTIVITA' BDB</option>
+              <option value="padovani">RIEPILOGO ATTIVITA' PADOVANI</option>
+              <option value="keller">RIEPILOGO ATTIVITA' KELLER</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="manMese">Mese del file Excel</label>
+            <input type="month" id="manMese">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field full-width">
+            <label for="manIndirizzo">Indirizzo sede / agenzia</label>
+            <input type="text" id="manIndirizzo" placeholder="es. BNL FILIALE MILANO CENTRO">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="manNumero">N. Consuntivo</label>
+            <input type="text" id="manNumero" placeholder="es. 350/2026 (libero)">
+          </div>
+          <div class="form-field">
+            <label for="manData">Data intervento</label>
+            <input type="text" id="manData" placeholder="es. 12/06/2026">
+          </div>
+          <div class="form-field">
+            <label for="manTotale">Totale (€)</label>
+            <input type="number" id="manTotale" step="0.01" placeholder="es. 250">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="manOdl">ODL</label>
+            <input type="text" id="manOdl" placeholder="es. OD12345">
+          </div>
+          <div class="form-field full-width">
+            <label for="manNota">Nota intervento</label>
+            <input type="text" id="manNota" placeholder="es. sostituzione filtro">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <button id="btnAggiungiRigaExcel" class="btn btn-primary">➕ Aggiungi riga all'Excel</button>
+            <button id="btnAnnullaModificaRigaManuale" class="btn btn-secondary hidden" style="margin-left:8px">✖ Annulla modifica</button>
+          </div>
+        </div>
+
+        <h4 style="margin-top:18px">Righe manuali salvate (mese corrente)</h4>
+        <table class="storico-tabella">
+          <thead>
+            <tr><th>Sezione</th><th>Indirizzo</th><th>N.Cons.</th><th>Data</th><th>Totale</th><th>ODL</th><th>Azioni</th></tr>
+          </thead>
+          <tbody id="righeManualiBody">
+            <tr><td colspan="7" class="empty">Nessuna riga manuale questo mese.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 4: Impostazioni -->
+    <div class="tab-content" id="tab-impostazioni">
+      <h2>⚙️ Impostazioni</h2>
+
+      <div class="form-section">
+        <h3>🏢 Clienti CBRE personalizzati</h3>
+        <p>
+          Aggiungi nuovi clienti per i consuntivi CBRE. Compaiono nelle tendine (categoria e sezione Excel)
+          e ognuno avrà la <strong>sua sezione nel file Excel mensile</strong>. Si salvano online, quindi appaiono su tutti i PC.
+        </p>
+        <div id="listaClientiCustom" class="lista-clienti-custom">
+          <p class="hint-vuoto">Nessun cliente personalizzato. Aggiungine uno qui sotto.</p>
+        </div>
+        <div class="form-row">
+          <div class="form-field" style="flex:2">
+            <label for="nuovoClienteCustom">Nome del nuovo cliente</label>
+            <input type="text" id="nuovoClienteCustom" placeholder="es. INTESA SANPAOLO" maxlength="60">
+          </div>
+          <div class="form-field" style="display:flex; align-items:flex-end">
+            <button type="button" id="btnAggiungiClienteCustom" class="btn btn-primary">➕ Aggiungi cliente</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>📁 Cartella di salvataggio (multi-PC su NAS)</h3>
+        <p>
+          La cartella <strong>CONSULTIVI GAMA</strong> viene creata/usata automaticamente dentro la cartella
+          padre che hai scelto.
+        </p>
+        <p style="font-size:13px; color:#666">
+          💡 <strong>Per più PC su NAS QNAP</strong>: su ogni PC scegli la <em>stessa cartella padre</em> sul NAS (es. <code>Z:\</code> o <code>\\NAS\Condivisa</code>).
+          L'app userà automaticamente la stessa <code>CONSULTIVI GAMA</code> dentro.
+        </p>
+        <div class="form-row">
+          <div class="form-field full-width">
+            <label>Cartella attualmente usata</label>
+            <input type="text" id="cartellaCorrenteInput" readonly class="readonly" placeholder="(non impostata)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <button id="btnCambiaCartella" class="btn btn-warning">📂 Cambia cartella padre</button>
+          </div>
+          <div class="form-field">
+            <button id="btnApriCartella" class="btn btn-secondary">🗂️ Apri cartella in Esplora risorse</button>
+          </div>
+          <div class="form-field">
+            <button id="btnRicreaCartelle" class="btn btn-secondary">🔄 Ricrea cartelle mensili (12 mesi)</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <button id="btnVerificaNas" class="btn btn-secondary">🔌 Verifica stato NAS adesso</button>
+          </div>
+          <div class="form-field">
+            <button id="btnSincronizzaOra" class="btn btn-secondary">⬆️ Sincronizza file offline ora</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Numero consuntivo</h3>
+        <p>Imposta manualmente il prossimo numero per ciascun tipo (usalo SOLO se necessario, es. al primo avvio dell'app).</p>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="forzaNumeroCbre">Prossimo numero CBRE:</label>
+            <input type="number" id="forzaNumeroCbre" min="1">
+          </div>
+          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+            <button id="btnForzaNumeroCbre" class="btn btn-warning">⚠️ Imposta CBRE</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="forzaNumeroCreval">Prossimo numero CREVAL:</label>
+            <input type="number" id="forzaNumeroCreval" min="1">
+          </div>
+          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+            <button id="btnForzaNumeroCreval" class="btn btn-warning">⚠️ Imposta CREVAL</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="forzaNumeroPreventivo">Prossimo numero PREVENTIVO:</label>
+            <input type="number" id="forzaNumeroPreventivo" min="1">
+          </div>
+          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+            <button id="btnForzaNumeroPreventivo" class="btn btn-warning">⚠️ Imposta PREVENTIVO</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="forzaNumeroDussmannNhood">Prossimo numero DUSSMANN - NHOOD:</label>
+            <input type="number" id="forzaNumeroDussmannNhood" min="1">
+          </div>
+          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+            <button id="btnForzaNumeroDussmannNhood" class="btn btn-warning">⚠️ Imposta NHOOD</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="forzaNumeroDussmannEdile">Prossimo numero DUSSMANN - SQUADRA EDILE:</label>
+            <input type="number" id="forzaNumeroDussmannEdile" min="1">
+          </div>
+          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+            <button id="btnForzaNumeroDussmannEdile" class="btn btn-warning">⚠️ Imposta EDILE</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="forzaNumeroDussmannImpiantistica">Prossimo numero DUSSMANN - SQUADRA IMPIANTISTICA:</label>
+            <input type="number" id="forzaNumeroDussmannImpiantistica" min="1">
+          </div>
+          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+            <button id="btnForzaNumeroDussmannImpiantistica" class="btn btn-warning">⚠️ Imposta IMPIANTISTICA</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>📝 Cartella Preventivi</h3>
+        <p>I preventivi vengono salvati in una cartella SEPARATA dai consuntivi (dentro creerà "PREVENTIVI GAMA" divisa per anno).</p>
+        <div class="form-row">
+          <div class="form-field full-width">
+            <label>Cartella preventivi attuale</label>
+            <input type="text" id="cartellaPreventiviInput" readonly class="readonly" placeholder="(predefinita: Documenti/PREVENTIVI GAMA)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <button id="btnCartellaPreventivi" class="btn btn-secondary">📂 Scegli cartella preventivi</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>🏢 Cartella DUSSMANN</h3>
+        <p>I consuntivi DUSSMANN vengono salvati in una cartella SEPARATA (dentro creerà "DUSSMANN" divisa per mese e gruppo: NHOOD, Squadra Edile, Squadra Impiantistica).</p>
+        <div class="form-row">
+          <div class="form-field full-width">
+            <label>Cartella DUSSMANN attuale</label>
+            <input type="text" id="cartellaDussmannInput" readonly class="readonly" placeholder="(predefinita: come i consuntivi)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <button id="btnCartellaDussmann" class="btn btn-secondary">📂 Scegli cartella DUSSMANN</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>✅ Cartella Preventivi Accettati</h3>
+        <p>Quando premi "Accettato" nello storico preventivi, il preventivo viene rigenerato col timbro verde ACCETTATO e salvato qui (dentro creerà "PREVENTIVI ACCETTATI").</p>
+        <div class="form-row">
+          <div class="form-field full-width">
+            <label>Cartella accettati attuale</label>
+            <input type="text" id="cartellaAccettatiInput" readonly class="readonly" placeholder="(predefinita: Documenti/PREVENTIVI ACCETTATI)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <button id="btnCartellaAccettati" class="btn btn-secondary">📂 Scegli cartella accettati</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Dati Gama Service</h3>
+        <p>Questi dati appaiono nell'intestazione del .docx.</p>
+        <div class="form-row">
+          <div class="form-field full-width">
+            <label for="gamaIntestazione">Intestazione</label>
+            <input type="text" id="gamaIntestazione" value="GAMA SERVICE S.R.L VIALE MONZA,69 20845, SOVICO (MB)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="gamaPiva">P.IVA</label>
+            <input type="text" id="gamaPiva" value="12048300961">
+          </div>
+          <div class="form-field">
+            <label for="gamaMail">Mail</label>
+            <input type="text" id="gamaMail" value="info@gama-service.com">
+          </div>
+        </div>
+        <button id="btnSalvaImpostazioni" class="btn btn-primary">💾 Salva impostazioni</button>
+      </div>
+
+      <div class="form-section">
+        <h3>ℹ️ Informazioni app</h3>
+        <div class="info-app">
+          <div class="info-riga">
+            <span class="info-label">Versione installata:</span>
+            <strong id="infoVersione" class="info-valore">—</strong>
+          </div>
+          <div class="info-riga">
+            <span class="info-label">Stato aggiornamenti:</span>
+            <span id="infoUpdateStato" class="info-valore">In attesa di controllo...</span>
+          </div>
+          <div class="info-riga">
+            <span class="info-label">Azienda:</span>
+            <span class="info-valore">Gama Service S.R.L</span>
+          </div>
+          <div class="info-riga">
+            <span class="info-label">Note versione:</span>
+            <span class="info-valore">🔧 Eliminazione protetta: se elimini un consuntivo dallo storico e il file Excel del mese è aperto (sulla rete o sul PC), l'operazione viene annullata con avviso, così non resta una riga orfana nell'Excel. (v3.21.3)</span>
+          </div>
+          <p class="info-nota">L'app controlla automaticamente la presenza di aggiornamenti all'avvio. Se ne trova uno, lo installa da solo e si riavvia.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast notifiche -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <!-- Modal: accetta preventivo (chiede sezione Excel + mese) -->
+  <div id="modalAccetta" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:12px;padding:24px;max-width:500px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,0.3)">
+      <h3 style="margin-top:0">✅ Accetta preventivo <span id="modalAccettaNumero"></span></h3>
+      <p style="color:#555;font-size:14px">Il preventivo verrà salvato col timbro verde ACCETTATO e inserito nel file Excel del riepilogo. Scegli dove metterlo:</p>
+      <div style="margin-bottom:12px">
+        <label for="modalAccettaSezione" style="font-weight:600;display:block;margin-bottom:4px">Sezione del file Excel</label>
+        <select id="modalAccettaSezione" style="width:100%">
+          <option value="">— Scegli la sezione —</option>
+          <option value="bnl">RIPILOGO ATTIVITA' BNL + FINDOMESTIC</option>
+          <option value="torre_diamante">RIEPILOGO ATTIVITA' TORRE DIAMANTE/SMERALDO</option>
+          <option value="mediobanca">RIPILOGO ATTIVITA' MEDIOBANCA + BCC + BENETTON + RMA</option>
+          <option value="ceva">RIPILOGO ATTIVITA' CEVA LOGISTICS ITALIA</option>
+          <option value="bdb">RIEPOLOGO ATTIVITA' BDB</option>
+          <option value="padovani">RIEPILOGO ATTIVITA' PADOVANI</option>
+          <option value="keller">RIEPILOGO ATTIVITA' KELLER</option>
+        </select>
+      </div>
+      <div style="margin-bottom:18px">
+        <label for="modalAccettaMese" style="font-weight:600;display:block;margin-bottom:4px">Mese del file Excel</label>
+        <input type="month" id="modalAccettaMese" style="width:100%">
+        <small style="color:#777">Se il file Excel di quel mese non esiste, verrà creato automaticamente.</small>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button type="button" id="btnModalAccettaAnnulla" class="btn btn-secondary">✖ Annulla</button>
+        <button type="button" id="btnModalAccettaOk" class="btn btn-primary">✅ Conferma</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Librerie esterne -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- Firebase -->
+  <script type="module" src="firebase-config.js"></script>
+
+  <!-- Asset locali -->
+  <script src="assets/images.js"></script>
+  <script src="assets/template-excel.js"></script>
+  <script src="assets/template-excel-creval.js"></script>
+  <script src="assets/template-docx-cbre.js"></script>
+  <script src="assets/template-docx-preventivo.js"></script>
+  <script src="assets/template-docx-dussmann-distacco.js"></script>
+  <script src="assets/template-docx-dussmann-servizio.js"></script>
+  <script src="assets/template-docx-dussmann-rimborso.js"></script>
+  <script src="assets/timbro-accettato.js"></script>
+
+  <!-- App -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+{
+  "name": "gama-consuntivi",
+  "productName": "Gama Consuntivi",
+  "version": "3.21.3",
+  "description": "Generatore Consuntivi CBRE + CREVAL per Gama Service",
+  "main": "main.js",
+  "author": {
+    "name": "Gama Service S.R.L",
+    "email": "info@gama-service.com"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:portable": "electron-builder --win portable",
+    "publish": "electron-builder --win --publish always",
+    "publish:mac": "electron-builder --mac --publish always"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.2.1"
+  },
+  "build": {
+    "appId": "com.gamaservice.consuntivi",
+    "productName": "Gama Consuntivi",
+    "copyright": "Copyright © 2026 Gama Service S.R.L",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ServiziDc",
+        "repo": "gama-consuntivi-releases",
+        "releaseType": "release",
+        "vPrefixedTagName": true,
+        "publishAutoUpdate": true
+      }
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "icon.png",
+      "icon.ico",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico",
+      "verifyUpdateCodeSignature": false
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.business",
+      "artifactName": "Gama-Consuntivi-${version}-${arch}.${ext}",
+      "identity": null,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Gama Consuntivi usa Microsoft Word per convertire i documenti in PDF."
+      }
+    },
+    "dmg": {
+      "title": "Gama Consuntivi ${version}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Gama Consuntivi",
+      "installerLanguages": [
+        "it_IT"
+      ],
+      "language": "1040",
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false,
+      "menuCategory": "Gama Service",
+      "runAfterFinish": true,
+      "differentialPackage": false,
+      "artifactName": "Gama-Consuntivi-Setup-${version}.${ext}"
+    }
+  }
+}

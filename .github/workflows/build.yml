@@ -1,0 +1,25 @@
+name: Costruisci il Mac
+
+# Si avvia da solo ogni volta che il PC invia il codice (push su main),
+# oppure a mano dal sito GitHub (tab "Actions" -> "Run workflow").
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+      - name: Installa Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Installa le dipendenze
+        run: npm install
+      - name: Compila e pubblica il Mac
+        run: npm run publish:mac
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
