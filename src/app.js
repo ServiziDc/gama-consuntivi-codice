@@ -4143,45 +4143,83 @@ function creaGestoreColori(stylesXml) {
 // cellEdits: { "B5": { clear: true } o { type: "inlineStr"|"number", value: ... } }
 function applicaModificheCelle(sheetXml, cellEdits, gestoreColori) {
   // Pattern per match di una cella: <c r="..." [s="..."] [t="..."]>...</c> oppure self-closing <c r="..." /> 
-  // Versione "complete" che cattura cella aperta + contenuto + chiusura
   const pattern = /<c\s+([^/>]*?)\s*(?:\/>|>([\s\S]*?)<\/c>)/g;
 
-  return sheetXml.replace(pattern, (match, attrs, content) => {
-    // Estraggo gli attributi
+  // Prima passata: modifica le celle esistenti
+  const celleGiaScritte = new Set();
+  let xml = sheetXml.replace(pattern, (match, attrs, content) => {
     const refMatch = attrs.match(/r="([A-Z]+\d+)"/);
     if (!refMatch) return match;
     const ref = refMatch[1];
 
     const edit = cellEdits[ref];
-    if (!edit) return match; // non da modificare, lascia com'è
+    if (!edit) return match;
 
-    // Estraggo lo stile s="..." se c'è (lo preserviamo!)
+    celleGiaScritte.add(ref);
+
     const styleMatch = attrs.match(/s="(\d+)"/);
     let styleAttr = styleMatch ? ` s="${styleMatch[1]}"` : "";
-    // Colore pagamento: sostituisco lo stile con una variante colorata (mantiene bordi/allineamento)
     if (edit.colorFill && gestoreColori) {
       const origXf = styleMatch ? parseInt(styleMatch[1], 10) : 0;
       styleAttr = ` s="${gestoreColori.xfColorato(origXf, edit.colorFill)}"`;
     }
 
-    if (edit.clear) {
-      // Svuoto la cella ma mantengo lo stile (cella self-closing)
-      return `<c r="${ref}"${styleAttr}/>`;
-    }
-
-    if (edit.type === "number") {
-      // Cella numerica
-      return `<c r="${ref}"${styleAttr}><v>${edit.value}</v></c>`;
-    }
-
+    if (edit.clear) return `<c r="${ref}"${styleAttr}/>`;
+    if (edit.type === "number") return `<c r="${ref}"${styleAttr}><v>${edit.value}</v></c>`;
     if (edit.type === "inlineStr") {
-      // Cella stringa inline (più semplice, non tocco sharedStrings)
       const escapedVal = escapeXml(String(edit.value));
       return `<c r="${ref}"${styleAttr} t="inlineStr"><is><t xml:space="preserve">${escapedVal}</t></is></c>`;
     }
-
     return match;
   });
+
+  // Seconda passata: inserisce le celle che non esistevano nell'XML
+  // Raggruppa le celle mancanti per riga
+  const celleMancanti = {};
+  for (const [ref, edit] of Object.entries(cellEdits)) {
+    if (celleGiaScritte.has(ref) || edit.clear) continue;
+    const rowMatch = ref.match(/^([A-Z]+)(\d+)$/);
+    if (!rowMatch) continue;
+    const rowNum = rowMatch[2];
+    if (!celleMancanti[rowNum]) celleMancanti[rowNum] = [];
+    celleMancanti[rowNum].push({ ref, edit, col: rowMatch[1] });
+  }
+
+  // Per ogni riga con celle mancanti, inserisce le celle nel tag <row>
+  for (const [rowNum, celle] of Object.entries(celleMancanti)) {
+    const rowPattern = new RegExp(`(<row[^>]*\\br="${rowNum}"[^>]*>)([\\s\\S]*?)(</row>)`);
+    const rowMatch = xml.match(rowPattern);
+
+    // Costruisce le nuove celle XML
+    let nuoveCelleXml = "";
+    for (const { ref, edit } of celle) {
+      let styleAttr = "";
+      if (edit.colorFill && gestoreColori) {
+        styleAttr = ` s="${gestoreColori.xfColorato(0, edit.colorFill)}"`;
+      }
+      if (edit.type === "number") {
+        nuoveCelleXml += `<c r="${ref}"${styleAttr}><v>${edit.value}</v></c>`;
+      } else if (edit.type === "inlineStr") {
+        const escapedVal = escapeXml(String(edit.value));
+        nuoveCelleXml += `<c r="${ref}"${styleAttr} t="inlineStr"><is><t xml:space="preserve">${escapedVal}</t></is></c>`;
+      }
+    }
+
+    if (!nuoveCelleXml) continue;
+
+    if (rowMatch) {
+      // Riga esiste: aggiunge le celle dentro
+      xml = xml.replace(rowPattern, (m, open, content, close) => {
+        return open + content + nuoveCelleXml + close;
+      });
+    } else {
+      // Riga non esiste: la crea prima di </sheetData>
+      const newRow = `<row r="${rowNum}">${nuoveCelleXml}</row>`;
+      xml = xml.replace("</sheetData>", newRow + "</sheetData>");
+    }
+  }
+
+  return xml;
 }
 
 // Helper: setta cella mantenendo stile
