@@ -711,6 +711,18 @@ P.IVA 00124140211</textarea>
         </div>
         <div class="form-row">
           <div class="form-field">
+            <label>🎨 Colore riga (stato pagamento)</label>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+              <button type="button" id="manColoreGiallo" title="Pagato" style="background:#E8C84B;border:1px solid #bbb;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;">💰</button>
+              <button type="button" id="manColoreAzzurro" title="Parzialmente pagato" style="background:#BFE3F5;border:1px solid #bbb;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;">🔵</button>
+              <button type="button" id="manColoreNessuno" title="Nessun colore" style="background:#ffffff;border:1px solid #bbb;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;">⬜</button>
+              <span id="manColoreLabel" style="font-size:13px;color:#666;">Nessun colore</span>
+              <input type="hidden" id="manColore" value="">
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
             <button id="btnAggiungiRigaExcel" class="btn btn-primary">➕ Aggiungi riga all'Excel</button>
             <button id="btnAnnullaModificaRigaManuale" class="btn btn-secondary hidden" style="margin-left:8px">✖ Annulla modifica</button>
           </div>
@@ -719,7 +731,7 @@ P.IVA 00124140211</textarea>
         <h4 style="margin-top:18px">Righe manuali salvate (mese corrente)</h4>
         <table class="storico-tabella">
           <thead>
-            <tr><th>Sezione</th><th>Indirizzo</th><th>N.Cons.</th><th>Data</th><th>Totale</th><th>ODL</th><th>Azioni</th></tr>
+            <tr><th>Sezione</th><th>Indirizzo</th><th>N.Cons.</th><th>Data</th><th>Totale</th><th>ODL</th><th>Colore</th><th>Azioni</th></tr>
           </thead>
           <tbody id="righeManualiBody">
             <tr><td colspan="7" class="empty">Nessuna riga manuale questo mese.</td></tr>
@@ -938,6 +950,12 @@ P.IVA 00124140211</textarea>
             <span class="info-valore">📄 Pulsante "Salva anteprima PDF" in consuntivi e preventivi: genera un PDF sul Desktop senza salvare il documento. (v3.21.6)</span>
           </div>
           <p class="info-nota">L'app controlla automaticamente la presenza di aggiornamenti all'avvio. Se ne trova uno, lo installa da solo e si riavvia.</p>
+          <div id="sezioneAggiornaMac" style="display:none; margin-top:16px;">
+            <button id="btnAggiornaMac" class="btn btn-primary" style="font-size:15px; padding:10px 24px;">
+              🔄 Controlla aggiornamenti (Mac)
+            </button>
+            <p style="font-size:12px; color:#888; margin-top:8px;">Apre la pagina GitHub per scaricare l'ultima versione Mac.</p>
+          </div>
         </div>
       </div>
     </div>

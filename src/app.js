@@ -196,6 +196,29 @@ async function caricaVersioneApp() {
   const info = document.getElementById("infoVersione");
   if (badge) badge.textContent = "v" + versione;
   if (info) info.textContent = versione;
+
+  // Mostra pulsante aggiornamento Mac solo su Mac
+  try {
+    if (state.isElectron && window.electronAPI.getPlatform) {
+      const platform = await window.electronAPI.getPlatform();
+      if (platform === "darwin") {
+        const sezione = document.getElementById("sezioneAggiornaMac");
+        if (sezione) sezione.style.display = "block";
+        const btn = document.getElementById("btnAggiornaMac");
+        if (btn) {
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            btn.textContent = "⏳ Apertura...";
+            try { await window.electronAPI.apriPaginaAggiornaMac(); } catch(e) {}
+            setTimeout(() => {
+              btn.disabled = false;
+              btn.textContent = "🔄 Controlla aggiornamenti (Mac)";
+            }, 3000);
+          });
+        }
+      }
+    }
+  } catch(e) { console.warn("Rilevamento piattaforma:", e); }
 }
 
 // ============================================================
@@ -2276,6 +2299,27 @@ function setupRigheManualiExcel() {
   const btnAnn = document.getElementById("btnAnnullaModificaRigaManuale");
   if (btnAnn) btnAnn.addEventListener("click", annullaModificaRigaManuale);
 
+  // Gestione pulsanti colore
+  const COLORI_MAN = {
+    "giallo":   { hex: "#E8C84B", label: "Pagato" },
+    "azzurro":  { hex: "#BFE3F5", label: "Parz. pagato" },
+    "":         { hex: "",        label: "Nessun colore" }
+  };
+  function aggiornaBottoniColore(valore) {
+    ["giallo","azzurro","nessuno"].forEach(k => {
+      const b = document.getElementById("manColore" + k.charAt(0).toUpperCase() + k.slice(1));
+      if (b) b.style.border = ((valore === k || (k === "nessuno" && valore === "")) ? "3px solid #111" : "1px solid #bbb");
+    });
+    const label = document.getElementById("manColoreLabel");
+    if (label) label.textContent = COLORI_MAN[valore] ? COLORI_MAN[valore].label : "Nessun colore";
+    const inp = document.getElementById("manColore");
+    if (inp) inp.value = valore;
+  }
+  aggiornaBottoniColore("");
+  document.getElementById("manColoreGiallo")?.addEventListener("click", () => aggiornaBottoniColore("giallo"));
+  document.getElementById("manColoreAzzurro")?.addEventListener("click", () => aggiornaBottoniColore("azzurro"));
+  document.getElementById("manColoreNessuno")?.addEventListener("click", () => aggiornaBottoniColore(""));
+
   btn.addEventListener("click", async () => {
     const sezione = document.getElementById("manSezione").value;
     const mese = document.getElementById("manMese").value;
@@ -2291,6 +2335,7 @@ function setupRigheManualiExcel() {
       totale: parseFloat(document.getElementById("manTotale").value) || 0,
       odl: document.getElementById("manOdl").value.trim(),
       nota: document.getElementById("manNota").value.trim(),
+      colore: document.getElementById("manColore")?.value || "",
       creatoIl: new Date().toISOString()
     };
     if (!riga.indirizzo && !riga.numero && riga.totale === 0) {
@@ -2334,22 +2379,32 @@ function refreshRigheManuali() {
   const lista = (state.righeManualiMese || []).slice().sort((a,b) =>
     (a.sezioneExcel || "").localeCompare(b.sezioneExcel || ""));
   if (!lista.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty">Nessuna riga manuale questo mese.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">Nessuna riga manuale questo mese.</td></tr>`;
     return;
   }
-  tbody.innerHTML = lista.map(m => `
-    <tr>
+  const COLORI_MAN = {
+    "giallo":  { hex: "#E8C84B", label: "Pagato" },
+    "azzurro": { hex: "#BFE3F5", label: "Parz. pagato" },
+  };
+  tbody.innerHTML = lista.map(m => {
+    const col = COLORI_MAN[m.colore];
+    const sfondo = col ? `style="background:${col.hex}"` : "";
+    const pallino = col ? `<span title="${col.label}" style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${col.hex};border:1px solid #aaa;"></span>` : "—";
+    return `
+    <tr ${sfondo}>
       <td>${escapeHtml(NOMI_SEZIONI_EXCEL[m.sezioneExcel] || m.sezioneExcel || "—")}</td>
       <td>${escapeHtml(m.indirizzo || "—")}</td>
       <td>${escapeHtml(m.numero || "—")}</td>
       <td>${escapeHtml(m.data || "—")}</td>
       <td>€ ${formatEuro(m.totale || 0)}</td>
       <td>${escapeHtml(m.odl || "—")}</td>
+      <td style="text-align:center">${pallino}</td>
       <td>
         <button class="btn-mini" onclick="window.modificaRigaManuale('${m.id}')" title="Modifica">✏️</button>
         <button class="btn-mini danger" onclick="window.eliminaRigaManuale('${m.id}')" title="Elimina">🗑️</button>
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 }
 
 window.eliminaRigaManuale = async (id) => {
@@ -2373,6 +2428,15 @@ function annullaModificaRigaManuale() {
   ["manIndirizzo","manNumero","manData","manTotale","manOdl","manNota"].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = "";
   });
+  // Reset colore
+  const inpCol = document.getElementById("manColore");
+  if (inpCol) inpCol.value = "";
+  ["Giallo","Azzurro","Nessuno"].forEach(k => {
+    const b = document.getElementById("manColore" + k);
+    if (b) b.style.border = k === "Nessuno" ? "3px solid #111" : "1px solid #bbb";
+  });
+  const label = document.getElementById("manColoreLabel");
+  if (label) label.textContent = "Nessun colore";
 }
 
 window.modificaRigaManuale = (id) => {
@@ -2386,6 +2450,16 @@ window.modificaRigaManuale = (id) => {
   document.getElementById("manTotale").value = (m.totale != null ? m.totale : "");
   document.getElementById("manOdl").value = m.odl || "";
   document.getElementById("manNota").value = m.nota || "";
+  // Ripristina colore
+  const coloreVal = m.colore || "";
+  const inpCol = document.getElementById("manColore");
+  if (inpCol) inpCol.value = coloreVal;
+  ["giallo","azzurro","nessuno"].forEach(k => {
+    const b = document.getElementById("manColore" + k.charAt(0).toUpperCase() + k.slice(1));
+    if (b) b.style.border = ((coloreVal === k || (k === "nessuno" && coloreVal === "")) ? "3px solid #111" : "1px solid #bbb");
+  });
+  const label = document.getElementById("manColoreLabel");
+  if (label) label.textContent = coloreVal === "giallo" ? "Pagato" : coloreVal === "azzurro" ? "Parz. pagato" : "Nessun colore";
   state.modificaInCorsoRigaManuale = id;
   const btn = document.getElementById("btnAggiungiRigaExcel");
   if (btn) btn.innerHTML = "💾 Salva modifiche";
