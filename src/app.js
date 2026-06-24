@@ -232,7 +232,7 @@ const CAMPI_BOZZA = [
   // Form Consuntivo
   "tipoConsuntivo", "categoria", "sezioneExcel", "sede", "dataDocumento",
   "dataIntervento", "odl", "descrizione", "ore", "tariffaOraria",
-  "oreExtra", "tariffaExtra", "oreViaggio", "tariffaViaggio",
+  "oreExtra", "tariffaExtra", "oreViaggio", "tariffaViaggio", "nascondiaCorpo",
   "descrMateriale", "costoMateriale", "smaltimento", "notaExcel",
   "noloPiattaforma", "noloTrabattello", "praticaFgas", "vociManualiJson", "materialiExtraJson",
   "crevalProvincia", "crevalRegione", "crevalTicket", "crevalOdlNumero", "pagamentiTipo",
@@ -1207,6 +1207,7 @@ function costruisciConsuntivoDaForm(numero, tipo) {
     tariffaViaggio: parseFloat(document.getElementById("tariffaViaggio")?.value) || 0,
     descrMateriale: document.getElementById("descrMateriale").value.trim(),
     costoMateriale: parseFloat(document.getElementById("costoMateriale").value) || 0,
+    nascondiaCorpo: document.getElementById("nascondiaCorpo")?.checked || false,
     smaltimento: parseFloat(document.getElementById("smaltimento").value) || 0,
     noloPiattaforma: parseFloat(document.getElementById("noloPiattaforma").value) || 0,
     noloTrabattello: parseFloat(document.getElementById("noloTrabattello").value) || 0,
@@ -1214,7 +1215,6 @@ function costruisciConsuntivoDaForm(numero, tipo) {
     vociManuali: leggiVociManuali(),
     materialiExtra: leggiMaterialiExtra(),
     // Totale a mano: se attivo, il totale lo scrive l'utente e ignora il calcolo automatico
-    materialeACorpo: !!(document.getElementById("materialeACorpo") && document.getElementById("materialeACorpo").checked),
     totaleManuale: !!(document.getElementById("totaleManuale") && document.getElementById("totaleManuale").checked),
     totaleInserito: (document.getElementById("totaleManuale") && document.getElementById("totaleManuale").checked) ? parseImporto(document.getElementById("totale").value) : null,
     notaExcel: document.getElementById("notaExcel").value.trim(),
@@ -1538,10 +1538,10 @@ async function buildDocx(c) {
     righe.push({ tit: "Manodopera Tecnico Specializzato", sub: `Tariffa oraria € ${formatEuro(c.tariffaExtra)}`, qta: `${formatNumero(c.oreExtra)} ore`, imp: c.oreExtra * c.tariffaExtra });
   }
   if (c.costoMateriale && c.costoMateriale > 0) {
-    righe.push({ tit: "Materiali e Consumabili", sub: c.descrMateriale || "", qta: c.materialeACorpo ? "A corpo" : "—", imp: c.costoMateriale });
+    righe.push({ tit: "Materiali e Consumabili", sub: c.descrMateriale || "", qta: c.nascondiaCorpo ? "—" : "A corpo", imp: c.costoMateriale });
   }
   (c.materialiExtra || []).forEach(m => {
-    if ((m.descr || "").trim() || (m.costo || 0) !== 0) righe.push({ tit: (m.descr || "Materiale").trim(), sub: "", qta: c.materialeACorpo ? "A corpo" : "—", imp: m.costo || 0 });
+    if ((m.descr || "").trim() || (m.costo || 0) !== 0) righe.push({ tit: (m.descr || "Materiale").trim(), sub: "", qta: c.nascondiaCorpo ? "—" : "A corpo", imp: m.costo || 0 });
   });
   if (c.smaltimento && c.smaltimento !== 0) righe.push({ tit: "Smaltimento", sub: "", qta: "—", imp: c.smaltimento });
   if ((c.noloPiattaforma || 0) !== 0) righe.push({ tit: "Nolo Piattaforma", sub: "", qta: "—", imp: c.noloPiattaforma });
@@ -3444,8 +3444,6 @@ window.modificaConsuntivo = async (id) => {
   document.getElementById("tariffaExtra").value = c.tariffaExtra || "";
   document.getElementById("descrMateriale").value = c.descrMateriale || "";
   document.getElementById("costoMateriale").value = c.costoMateriale || 0;
-  const _matACorpoEl = document.getElementById("materialeACorpo");
-  if (_matACorpoEl) _matACorpoEl.checked = !!c.materialeACorpo;
   if (document.getElementById("smaltimento")) document.getElementById("smaltimento").value = c.smaltimento || 0;
   // Voci aggiuntive
   if (document.getElementById("noloPiattaforma")) document.getElementById("noloPiattaforma").value = c.noloPiattaforma || "";
@@ -3481,6 +3479,10 @@ window.modificaConsuntivo = async (id) => {
       _totMod.classList.add("readonly");
     }
   }
+
+  // Ripristino "Nascondi A corpo"
+  const _nascEl = document.getElementById("nascondiaCorpo");
+  if (_nascEl) _nascEl.checked = !!c.nascondiaCorpo;
 
   ricalcolaTotale();
 
