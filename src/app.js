@@ -232,7 +232,7 @@ const CAMPI_BOZZA = [
   // Form Consuntivo
   "tipoConsuntivo", "categoria", "sezioneExcel", "sede", "dataDocumento",
   "dataIntervento", "odl", "descrizione", "ore", "tariffaOraria",
-  "oreExtra", "tariffaExtra",
+  "oreExtra", "tariffaExtra", "oreViaggio", "tariffaViaggio",
   "descrMateriale", "costoMateriale", "smaltimento", "notaExcel",
   "noloPiattaforma", "noloTrabattello", "praticaFgas", "vociManualiJson", "materialiExtraJson",
   "crevalProvincia", "crevalRegione", "crevalTicket", "crevalOdlNumero", "pagamentiTipo",
@@ -874,7 +874,7 @@ function setupForm() {
 
   // Ore extra: aggiornano l'anteprima in tempo reale SOLO per il CREVAL
   // (per il CBRE il comportamento resta esattamente com'era).
-  ["oreExtra", "tariffaExtra"].forEach(id => {
+  [["oreExtra", "tariffaExtra"], ["oreViaggio", "tariffaViaggio"]].flat().forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("input", () => {
       const tipoSel = document.getElementById("tipoConsuntivo");
@@ -1042,6 +1042,9 @@ function ricalcolaTotale() {
   // Ore extra (opzionali)
   const oreExtra = parseFloat(document.getElementById("oreExtra").value) || 0;
   const tariffaExtra = parseFloat(document.getElementById("tariffaExtra").value) || 0;
+  // Ore di viaggio (opzionali)
+  const oreViaggio = parseFloat(document.getElementById("oreViaggio")?.value) || 0;
+  const tariffaViaggio = parseFloat(document.getElementById("tariffaViaggio")?.value) || 0;
   // Nuove voci fisse
   const noloPiatt = parseFloat(document.getElementById("noloPiattaforma").value) || 0;
   const noloTrab = parseFloat(document.getElementById("noloTrabattello").value) || 0;
@@ -1055,10 +1058,13 @@ function ricalcolaTotale() {
 
   const costoOre = ore * tariffa;
   const costoOreExtra = oreExtra * tariffaExtra;
-  const totale = costoOre + costoOreExtra + mat + sma + noloPiatt + noloTrab + fgas + totVociMan + totMatExtra;
+  const costoViaggio = oreViaggio * tariffaViaggio;
+  const totale = costoOre + costoOreExtra + costoViaggio + mat + sma + noloPiatt + noloTrab + fgas + totVociMan + totMatExtra;
 
   document.getElementById("costoOre").value = formatEuro(costoOre);
   document.getElementById("costoOreExtra").value = formatEuro(costoOreExtra);
+  const elCostoViaggio = document.getElementById("costoViaggio");
+  if (elCostoViaggio) elCostoViaggio.value = formatEuro(costoViaggio);
   // Se "Totale a mano" è attivo, non sovrascrivo il totale scritto dall'utente
   const _totMan = document.getElementById("totaleManuale");
   if (!(_totMan && _totMan.checked)) {
@@ -1196,6 +1202,9 @@ function costruisciConsuntivoDaForm(numero, tipo) {
     // Ore extra opzionali (seconda riga ore, es. tariffa diversa)
     oreExtra: parseFloat(document.getElementById("oreExtra").value) || 0,
     tariffaExtra: parseFloat(document.getElementById("tariffaExtra").value) || 0,
+    // Ore di viaggio opzionali
+    oreViaggio: parseFloat(document.getElementById("oreViaggio")?.value) || 0,
+    tariffaViaggio: parseFloat(document.getElementById("tariffaViaggio")?.value) || 0,
     descrMateriale: document.getElementById("descrMateriale").value.trim(),
     costoMateriale: parseFloat(document.getElementById("costoMateriale").value) || 0,
     smaltimento: parseFloat(document.getElementById("smaltimento").value) || 0,
@@ -1225,10 +1234,11 @@ function calcolaTotaleConsuntivo(c) {
   // Se il totale è stato inserito a mano, lo uso così com'è
   if (c.totaleManuale) return c.totaleInserito || 0;
   const costoOreExtra = (c.oreExtra || 0) * (c.tariffaExtra || 0);
+  const costoViaggio = (c.oreViaggio || 0) * (c.tariffaViaggio || 0);
   const extraFissi = (c.noloPiattaforma || 0) + (c.noloTrabattello || 0) + (c.praticaFgas || 0);
   const totVociMan = (c.vociManuali || []).reduce((s, v) => s + (v.importo || 0), 0);
   const totMatExtra = (c.materialiExtra || []).reduce((s, m) => s + (m.costo || 0), 0);
-  return c.ore * c.tariffaOraria + costoOreExtra + c.costoMateriale + c.smaltimento + extraFissi + totVociMan + totMatExtra;
+  return c.ore * c.tariffaOraria + costoOreExtra + costoViaggio + c.costoMateriale + c.smaltimento + extraFissi + totVociMan + totMatExtra;
 }
 
 // ============================================================
@@ -3163,6 +3173,11 @@ function mostraPreview() {
     const costoOreExtra = c.oreExtra * c.tariffaExtra;
     txt += `NR ° ${formatNumero(c.oreExtra)} ORE TOTALI TECNICO SPECIALIZZATO = € ${formatEuro(costoOreExtra)}\n`;
   }
+  // Riga ore di viaggio (opzionale)
+  if (c.oreViaggio && c.oreViaggio > 0 && c.tariffaViaggio && c.tariffaViaggio > 0) {
+    const costoViaggio = c.oreViaggio * c.tariffaViaggio;
+    txt += `NR ° ${formatNumero(c.oreViaggio)} ORE DI VIAGGIO = € ${formatEuro(costoViaggio)}\n`;
+  }
   txt += `\n`;
   if (c.costoMateriale > 0) {
     if (c.descrMateriale) txt += `MATERIALE:\n${c.descrMateriale} = € ${formatEuro(c.costoMateriale)}\n\n`;
@@ -3834,7 +3849,14 @@ async function costruisciExcelMese(yyyymm, consuntiviCbre, baseBytes = null) {
       cellEdits[`B${r}`] = { type: "inlineStr", value: (c.sede || "").toUpperCase(), colorFill: _fill };
       cellEdits[`D${r}`] = { type: "inlineStr", value: numeroCell, colorFill: _fill };
       cellEdits[`E${r}`] = { type: "inlineStr", value: c.dataIntervento || "", colorFill: _fill };
-      cellEdits[`F${r}`] = { type: "number", value: c.totale || 0, colorFill: _fill };
+      // Per le righe manuali scrivo il totale come stringa formattata (es. 13.390,00)
+      // per le righe normali lo scrivo come numero (il formato della cella lo gestisce)
+      if (c._manuale) {
+        const totStr = (c.totale || 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        cellEdits[`F${r}`] = { type: "inlineStr", value: totStr, colorFill: _fill };
+      } else {
+        cellEdits[`F${r}`] = { type: "number", value: c.totale || 0, colorFill: _fill };
+      }
       cellEdits[`G${r}`] = { type: "inlineStr", value: c.odl || "", colorFill: _fill };
       cellEdits[`H${r}`] = { type: "inlineStr", value: c.notaExcel || "", colorFill: _fill };
       // Coloro anche la colonna C (vuota) per non lasciare un buco bianco nella riga
@@ -3869,7 +3891,12 @@ async function costruisciExcelMese(yyyymm, consuntiviCbre, baseBytes = null) {
         cellEdits[`B${r}`] = { type: "inlineStr", value: (c.sede || "").toUpperCase(), colorFill: _fill };
         cellEdits[`D${r}`] = { type: "inlineStr", value: numeroCell, colorFill: _fill };
         cellEdits[`E${r}`] = { type: "inlineStr", value: c.dataIntervento || "", colorFill: _fill };
-        cellEdits[`F${r}`] = { type: "number", value: c.totale || 0, colorFill: _fill };
+        if (c._manuale) {
+          const totStr = (c.totale || 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          cellEdits[`F${r}`] = { type: "inlineStr", value: totStr, colorFill: _fill };
+        } else {
+          cellEdits[`F${r}`] = { type: "number", value: c.totale || 0, colorFill: _fill };
+        }
         cellEdits[`G${r}`] = { type: "inlineStr", value: c.odl || "", colorFill: _fill };
         cellEdits[`H${r}`] = { type: "inlineStr", value: c.notaExcel || "", colorFill: _fill };
         if (_fill) cellEdits[`C${r}`] = { clear: true, colorFill: _fill };
@@ -4232,7 +4259,9 @@ async function listaCbreConPreventiviAccettati(yyyymm) {
         odl: m.odl || "",
         notaExcel: m.nota || "",
         totale: m.totale || 0,
-        sezioneExcel: m.sezioneExcel
+        sezioneExcel: m.sezioneExcel,
+        // Colore: può venire da statoPagamento o dal campo colore del desktop
+        statoPagamento: m.statoPagamento || (m.colore === "giallo" ? "pagato" : m.colore === "azzurro" ? "parziale" : ""),
       });
     });
   } catch (e) { console.warn("Lettura righe manuali per Excel:", e.message); }
