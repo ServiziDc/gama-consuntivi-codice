@@ -4319,29 +4319,12 @@ async function listaCbreConPreventiviAccettati(yyyymm) {
     snap.forEach(d => consuntiviCbre.push({ id: d.id, ...d.data() }));
   }
 
-  // Preventivi accettati con destinazione Excel = questo mese
+  // Preventivi accettati: NON li leggo più dalla collection "preventivi".
+  // Ora quando un preventivo viene accettato viene salvata una riga nella
+  // collection "consuntivi" (tipo:"cbre", nota "PREVENTIVO NR X ACCETTATO"),
+  // quindi è già incluso in consuntiviCbre qui sopra. Questo evita la doppia
+  // riga (OFFERTA + ACCETTATO) e mostra solo gli accettati.
   const pseudo = [];
-  try {
-    const qp = fb.query(fb.collection(fb.db, "preventivi"),
-                        fb.where("excelMese", "==", yyyymm));
-    const snapP = await fb.getDocs(qp);
-    snapP.forEach(d => {
-      const p = d.data();
-      if (!p.excelSezione) return;
-      pseudo.push({
-        _prev: true,            // segna che è un preventivo (l'import lo salta)
-        id: d.id,
-        numero: p.numero,
-        sede: (p.destinatario || "").split("\n")[0],
-        dataDocumento: p.dataDocumento,
-        dataIntervento: formatDateIt(p.dataDocumento),
-        odl: "",
-        notaExcel: "PREVENTIVO: " + (p.oggetto || ""),
-        totale: p.importo || 0,
-        sezioneExcel: p.excelSezione
-      });
-    });
-  } catch (e) { console.warn("Lettura preventivi per Excel:", e.message); }
 
   // Righe manuali (inserite a mano nella scheda File Excel) destinate a questo mese
   try {

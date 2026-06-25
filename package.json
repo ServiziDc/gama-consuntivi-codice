@@ -1,7 +1,7 @@
 {
   "name": "gama-consuntivi",
   "productName": "Gama Consuntivi",
-  "version": "3.21.24",
+  "version": "3.21.25",
   "description": "Generatore Consuntivi CBRE + CREVAL per Gama Service",
   "main": "main.js",
   "author": {
