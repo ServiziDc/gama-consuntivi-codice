@@ -823,59 +823,72 @@ const { exec } = require("child_process");
 
 function convertiDocxInPdf(docxPath, pdfPath) {
   return new Promise((resolve) => {
-    // === Mac: Microsoft Word via AppleScript → PDF identico a quello di Windows ===
+
+    // === MAC ===
     if (process.platform === "darwin") {
       const { execFile } = require("child_process");
-      const righe = [
-        'on run argv',
-        '  set inFile to (POSIX file (item 1 of argv))',
-        '  set outPath to ((POSIX file (item 2 of argv)) as text)',
-        '  tell application "Microsoft Word"',
-        '    open inFile',
-        '    set theDoc to active document',
-        '    save as theDoc file name outPath file format format PDF',
-        '    close theDoc saving no',
-        '  end tell',
-        'end run'
-      ];
-      const args = [];
-      righe.forEach(function (r) { args.push("-e", r); });
-      args.push(docxPath, pdfPath);
-      execFile("osascript", args, { timeout: 90000 }, function (err, stdout, stderr) {
+      // AppleScript salvato su file per evitare problemi di escape con -e
+      const docxEscaped = docxPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const pdfEscaped  = pdfPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const script = `
+on run
+  set inFile to POSIX file "${docxEscaped}"
+  set outFile to POSIX file "${pdfEscaped}"
+  tell application "Microsoft Word"
+    open inFile
+    set theDoc to active document
+    save as theDoc file name (outFile as text) file format format PDF
+    close theDoc saving no
+  end tell
+end run
+`.trim();
+      const tmpScript = path.join(app.getPath("temp"), "conv_" + Date.now() + ".scpt");
+      try { fs.writeFileSync(tmpScript, script, "utf8"); } catch(e) {}
+      execFile("osascript", [tmpScript], { timeout: 90000 }, async (err) => {
+        try { fs.unlinkSync(tmpScript); } catch(e) {}
         if (fs.existsSync(pdfPath)) return resolve({ ok: true });
-        return resolve({ ok: false, errore: "Word per Mac non ha creato il PDF: " + (stderr || (err && err.message) || "errore sconosciuto") });
+        // Fallback: LibreOffice
+        const outDir = path.dirname(pdfPath);
+        const libreCmd = `/Applications/LibreOffice.app/Contents/MacOS/soffice --headless --convert-to pdf --outdir "${outDir}" "${docxPath}"`;
+        exec(libreCmd, { timeout: 60000 }, async (err2) => {
+          if (err2) {
+            return resolve({ ok: false, errore: "Word non disponibile e LibreOffice non trovato. Installa Microsoft Word o LibreOffice per generare PDF sul Mac." });
+          }
+          const docxBase = path.basename(docxPath).replace(/\.docx$/i, "");
+          const generato = path.join(outDir, docxBase + ".pdf");
+          try {
+            if (generato !== pdfPath && fs.existsSync(generato)) {
+              await fsp.rename(generato, pdfPath);
+            }
+            resolve({ ok: fs.existsSync(pdfPath) });
+          } catch(e) {
+            resolve({ ok: false, errore: e.message });
+          }
+        });
       });
       return;
     }
 
+    // === LINUX (test) ===
     if (process.platform !== "win32") {
-      // Su non-Windows (es. test) provo con libreoffice se c'è
-      // LibreOffice nomina il PDF come il docx, quindi poi lo rinomino
       const outDir = path.dirname(pdfPath);
       const cmd = `libreoffice --headless --convert-to pdf --outdir "${outDir}" "${docxPath}"`;
       exec(cmd, { timeout: 60000 }, async (err) => {
         if (err) return resolve({ ok: false, errore: "LibreOffice non disponibile: " + err.message });
-        // LibreOffice crea <nomedocx>.pdf, lo rinomino nel nome voluto
         const docxBase = path.basename(docxPath).replace(/\.docx$/i, "");
         const generato = path.join(outDir, docxBase + ".pdf");
         try {
-          if (generato !== pdfPath && fs.existsSync(generato)) {
-            await fsp.rename(generato, pdfPath);
-          }
+          if (generato !== pdfPath && fs.existsSync(generato)) await fsp.rename(generato, pdfPath);
           resolve({ ok: fs.existsSync(pdfPath) });
-        } catch (e) {
-          resolve({ ok: false, errore: e.message });
-        }
+        } catch(e) { resolve({ ok: false, errore: e.message }); }
       });
       return;
     }
 
-    // Su Windows: uso Word via PowerShell COM
-    // Lo script PowerShell:
-    // 1. Apre Word invisibile
-    // 2. Apre il documento
-    // 3. Lo salva come PDF (formato 17 = wdFormatPDF)
-    // 4. Chiude documento e Word
+    // === WINDOWS: Word via PowerShell COM ===
+    // Scrivo lo script su file .ps1 temporaneo per evitare problemi di encoding
+    const tmpPs1 = path.join(os.tmpdir(), "gama_conv_" + Date.now() + ".ps1");
+
     const psScript = `
 $ErrorActionPreference = 'Stop'
 $word = $null
@@ -890,31 +903,25 @@ try {
 } catch {
   Write-Output ('ERRORE: ' + $_.Exception.Message)
 } finally {
-  if ($word -ne $null) { $word.Quit() }
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
-}
-`.trim();
+  if ($word -ne $null) {
+    try { $word.Quit() } catch {}
+    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null } catch {}
+  }
+}`.trim();
 
-    // Eseguo lo script PowerShell (codificato in base64 per evitare problemi di escape)
-    const psB64 = Buffer.from(psScript, "utf16le").toString("base64");
-    const cmd = `powershell -NoProfile -NonInteractive -EncodedCommand ${psB64}`;
+    try { fs.writeFileSync(tmpPs1, psScript, "utf8"); } catch(e) {}
 
-    exec(cmd, { timeout: 60000, windowsHide: true }, (err, stdout, stderr) => {
-      if (err) {
-        return resolve({ ok: false, errore: "Word non disponibile o errore: " + err.message });
-      }
-      const output = (stdout || "").trim();
-      if (output.includes("OK") && fs.existsSync(pdfPath)) {
-        resolve({ ok: true });
-      } else if (output.startsWith("ERRORE")) {
-        resolve({ ok: false, errore: output });
-      } else if (fs.existsSync(pdfPath)) {
-        // A volte Word non stampa OK ma il file c'è
-        resolve({ ok: true });
-      } else {
+    exec(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmpPs1}"`,
+      { timeout: 60000, windowsHide: true },
+      (err, stdout, stderr) => {
+        try { fs.unlinkSync(tmpPs1); } catch(e) {}
+        const output = (stdout || "").trim();
+        if (fs.existsSync(pdfPath)) return resolve({ ok: true });
+        if (err) return resolve({ ok: false, errore: "Word errore: " + err.message });
+        if (output.startsWith("ERRORE")) return resolve({ ok: false, errore: output });
         resolve({ ok: false, errore: "Conversione fallita: " + (output || stderr || "output vuoto") });
       }
-    });
+    );
   });
 }
 
@@ -1138,23 +1145,60 @@ ipcMain.handle("apri-pagina-aggiornamenti-mac", async () => {
   shell.openExternal("https://github.com/ServiziDc/gama-consuntivi-releases/releases/latest");
 });
 
-// Genera un PDF di anteprima dal docx e lo salva sul Desktop
-ipcMain.handle("salva-anteprima-pdf-desktop", async (event, { filename, arrayBuffer }) => {
+// Genera un PDF dal docx e lo salva sul Desktop
+ipcMain.handle("salva-anteprima-pdf-desktop", async (event, { filename, arrayBuffer, isAnteprima = true }) => {
   try {
     const desktopDir = app.getPath("desktop");
     const tmpDocx = path.join(app.getPath("temp"), "anteprima_tmp_" + Date.now() + ".docx");
-    const nomePdf = "ANTEPRIMA - " + filename.replace(/\.docx$/i, "") + ".pdf";
+    // Nome PDF sul Desktop. Se anteprima → "ANTEPRIMA - [nome].pdf", altrimenti "[nome].pdf"
+    let nomePulito = filename.replace(/\.docx$/i, "").replace(/^ANTEPRIMA\s*-\s*/i, "");
+    // Sanifico il nome: rimuovo caratteri vietati, newline, e accorcio se troppo lungo
+    nomePulito = nomePulito
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, " ")  // caratteri vietati nei nomi file Windows
+      .replace(/[\r\n]+/g, " ")                 // newline → spazio
+      .replace(/\./g, "")                       // tolgo i punti (problemi con SaveAs)
+      .replace(/\s+/g, " ")                     // spazi multipli → singolo
+      .trim()
+      .substring(0, 100);                       // max 100 caratteri
+    if (!nomePulito) nomePulito = "documento";
+    const nomePdf = (isAnteprima ? "ANTEPRIMA - " : "") + nomePulito + ".pdf";
     const pdfPath = path.join(desktopDir, nomePdf);
-    const buffer = Buffer.from(arrayBuffer);
+    // arrayBuffer può essere un Array di numeri (da Array.from(Uint8Array)) o un ArrayBuffer
+    const buffer = Array.isArray(arrayBuffer)
+      ? Buffer.from(arrayBuffer)
+      : Buffer.from(arrayBuffer);
     await fsp.writeFile(tmpDocx, buffer);
+    const docxScritto = fs.existsSync(tmpDocx);
     const risultato = await convertiDocxInPdf(tmpDocx, pdfPath);
     try { await fsp.unlink(tmpDocx); } catch(e) {}
     if (risultato.ok) {
       return { ok: true, pdfPath };
     } else {
+      // Mostro un popup con i dettagli dell'errore per capire cosa non va
+      try {
+        dialog.showMessageBox(mainWindow, {
+          type: "error",
+          title: "Errore generazione PDF",
+          message: "Non sono riuscito a creare il PDF anteprima.",
+          detail: "Dettagli tecnici:\n\n" +
+            "• Cartella Desktop: " + desktopDir + "\n" +
+            "• DOCX temporaneo scritto: " + (docxScritto ? "SI" : "NO") + "\n" +
+            "• Percorso PDF: " + pdfPath + "\n" +
+            "• Errore: " + (risultato.errore || "sconosciuto") + "\n\n" +
+            "Sistema: " + process.platform
+        });
+      } catch(e) {}
       return { ok: false, errore: risultato.errore || "Conversione fallita" };
     }
   } catch(e) {
+    try {
+      dialog.showMessageBox(mainWindow, {
+        type: "error",
+        title: "Errore generazione PDF",
+        message: "Errore imprevisto durante la creazione del PDF.",
+        detail: e.message + "\n\n" + (e.stack || "")
+      });
+    } catch(err) {}
     return { ok: false, errore: e.message };
   }
 });

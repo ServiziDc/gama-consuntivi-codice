@@ -97,7 +97,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getVersione: () => ipcRenderer.invoke("get-versione"),
   getPlatform: () => ipcRenderer.invoke("get-platform"),
   apriPaginaAggiornaMac: () => ipcRenderer.invoke("apri-pagina-aggiornamenti-mac"),
-  salvaAnteprima: (filename, arrayBuffer) => ipcRenderer.invoke("salva-anteprima-pdf-desktop", { filename, arrayBuffer }),
+  salvaAnteprima: (filename, arrayBuffer, isAnteprima = true) => ipcRenderer.invoke("salva-anteprima-pdf-desktop", { filename, arrayBuffer, isAnteprima }),
 });
 
 console.log("[Preload] electronAPI esposto");

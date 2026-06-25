@@ -1255,34 +1255,54 @@ async function salvaAnteprimaPdf(tipo) {
   try {
     let blob, filename;
     if (tipo === "preventivo") {
-      // Raccoglie dati preventivo senza salvare
+      // Raccoglie dati preventivo senza salvare (stessa logica di generaPreventivo)
       const destinatario = (document.getElementById("prevDestinatario").value || "").trim();
       const dataDocumento = document.getElementById("prevData").value;
       const offerte = leggiOffertePreventivo();
       if (!dataDocumento) throw new Error("Inserisci la data del documento");
-      if (!offerte.length || !offerte[0].oggetto) throw new Error("Aggiungi almeno un'offerta con oggetto");
+      if (!offerte.length) throw new Error("Aggiungi almeno un'offerta");
+      for (let i = 0; i < offerte.length; i++) {
+        const o = offerte[i];
+        if (!o.oggetto || o.oggetto.trim().toUpperCase() === "OFFERTA") {
+          throw new Error(`Offerta ${i + 1}: scrivi l'oggetto dopo la parola OFFERTA`);
+        }
+        if (!(o.importo > 0)) {
+          throw new Error(`Offerta ${i + 1}: inserisci l'importo`);
+        }
+      }
       const primaOff = offerte[0];
       const importoTot = offerte.reduce((s, o) => s + (o.importo || 0), 0);
-      const c = {
-        tipo: "preventivo", numero: "ANTEPRIMA", destinatario, dataDocumento, offerte,
-        oggetto: primaOff.oggetto, elenco: primaOff.elenco || "",
-        importo: importoTot, pagamenti: primaOff.pagamenti || "",
+      const oggettoPrinc = offerte.length > 1
+        ? `${primaOff.oggetto} (+${offerte.length - 1} offerte)`
+        : primaOff.oggetto;
+      const p = {
+        tipo: "preventivo",
+        numero: "ANTEPRIMA",
+        destinatario, dataDocumento, offerte,
+        oggetto: oggettoPrinc,
+        elenco: primaOff.elenco || "",
+        importo: importoTot,
+        pagamenti: primaOff.pagamenti || "",
         mese: getMonthFromDate(dataDocumento)
       };
-      const r = await buildDocx(c);
+      const r = await buildPreventivoDocx(p);
       blob = r.blob;
-      filename = "ANTEPRIMA - Preventivo " + destinatario + " " + dataDocumento + ".docx";
+      filename = "Preventivo " + destinatario + " " + dataDocumento + ".docx";
     } else {
       if (!validaForm()) throw new Error("Compila i campi obbligatori");
-      const tipo = document.getElementById("tipoConsuntivo").value;
-      const c = costruisciConsuntivoDaForm(0, tipo);
+      const tipoCons = document.getElementById("tipoConsuntivo").value;
+      const c = costruisciConsuntivoDaForm(0, tipoCons);
       c.numero = "ANTEPRIMA";
       const r = await buildDocx(c);
       blob = r.blob;
-      filename = "ANTEPRIMA - " + r.filename;
+      filename = r.filename;
     }
     const arrayBuffer = await blob.arrayBuffer();
-    const r = await window.electronAPI.salvaAnteprima(filename, Array.from(new Uint8Array(arrayBuffer)));
+    // Passa come Uint8Array (il main.js lo riceve come array di numeri e lo converte con Buffer.from)
+    const uint8 = Array.from(new Uint8Array(arrayBuffer));
+    // Il filename NON deve contenere già "ANTEPRIMA - " perché il main.js lo aggiunge
+    const filenamePerMain = filename.replace(/^ANTEPRIMA\s*-\s*/i, "");
+    const r = await window.electronAPI.salvaAnteprima(filenamePerMain, uint8, true);
     if (r && r.ok) {
       showToast("📄 Anteprima PDF salvata sul Desktop!", "success", 5000);
     } else {
@@ -1395,6 +1415,14 @@ async function generaConsuntivo() {
       const { blob, filename } = await buildDocx(c);
       const res = await salvaInCartella(blob, filename, tipo, c.mese);
       await gestisciOdlUpload(filename, tipo, c.mese);
+
+      // Salvo anche una copia del PDF sul Desktop (documento finale, senza prefisso ANTEPRIMA)
+      try {
+        if (window.electronAPI.salvaAnteprima) {
+          const arrPdf = await blob.arrayBuffer();
+          await window.electronAPI.salvaAnteprima(filename, Array.from(new Uint8Array(arrPdf)), false);
+        }
+      } catch(e) { console.warn("PDF Desktop:", e); }
 
       if (res.saved) {
         const offTxt = res.inOffline ? " [NAS OFFLINE - si sincronizzerà]" : "";
@@ -2024,8 +2052,14 @@ async function generaPreventivo() {
     if (state.isElectron) {
       const arr = await blob.arrayBuffer();
       const r = await window.electronAPI.salvaPreventivo(filename, Array.from(new Uint8Array(arr)));
+      // Salvo anche una copia del PDF sul Desktop
+      try {
+        if (window.electronAPI.salvaAnteprima) {
+          await window.electronAPI.salvaAnteprima(filename, Array.from(new Uint8Array(arr)), false);
+        }
+      } catch(e) { console.warn("PDF Desktop:", e); }
       if (r.ok) {
-        showToast(`✅ Preventivo NR ${numeroPrenotato} salvato in: ${r.path}`, "success", 6000);
+        showToast(`✅ Preventivo NR ${numeroPrenotato} salvato! 📕 PDF anche sul Desktop`, "success", 6000);
       } else {
         showToast(`❌ Errore salvataggio: ${r.errore}`, "error");
       }
@@ -2164,6 +2198,31 @@ window.accettaPreventivo = async (id, numero) => {
       excelSezione: scelta.sezione,
       excelMese: scelta.mese
     }, { merge: true });
+
+    // Aggiungo la riga anche nella collection "consuntivi" così appare nella PWA Excel
+    const offerte = Array.isArray(p.offerte) && p.offerte.length
+      ? p.offerte
+      : [{ oggetto: p.oggetto, importo: p.importo }];
+    const totalePreventivo = offerte.reduce((s, o) => s + (parseFloat(o.importo) || 0), 0);
+    const oggettoPreventivo = (offerte[0] && offerte[0].oggetto) || p.oggetto || "";
+    await fb.addDoc(fb.collection(fb.db, "consuntivi"), {
+      tipo: "cbre",
+      mese: scelta.mese,
+      sezioneExcel: scelta.sezione,
+      sede: p.destinatario || "",
+      numero: null,
+      origineManuale: true,
+      daPreventivo: true,
+      preventivoId: id,
+      preventivoNumero: numero,
+      oggetto: oggettoPreventivo,
+      dataIntervento: p.dataDocumento || new Date().toISOString().split("T")[0],
+      totale: totalePreventivo,
+      statoPagamento: "",
+      notaExcel: `PREVENTIVO NR ${numero} ACCETTATO`,
+      creatoIl: new Date().toISOString(),
+      operatore: state.utenteEmail || "",
+    });
 
     // Aggiorno (o creo) il file Excel del mese scelto con la riga del preventivo
     const rExcel = await aggiornaExcelMese(scelta.mese);
