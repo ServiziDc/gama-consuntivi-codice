@@ -272,6 +272,65 @@ test("Timbro presente", esiste(path.join(SRC, "assets", "timbro.png")));
 test("Workflow GitHub Actions (build Mac)", esiste(path.join(ROOT, ".github", "workflows", "build.yml")));
 
 // ============================================================================
+sezione("FASE N - SISTEMA DI ATTIVAZIONE (key)");
+
+test("File attivazione.js presente", esiste(path.join(ROOT, "attivazione.js")));
+test("File attivazione.html presente", esiste(path.join(ROOT, "attivazione.html")));
+
+if (esiste(path.join(ROOT, "attivazione.js"))) {
+  try {
+    const att = require(path.join(ROOT, "attivazione.js"));
+    // Genera codice macchina
+    const codice = att.generaCodiceMacchina();
+    test("Genera codice macchina (formato XXXX-XXXX-XXXX)", /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(codice), `ottenuto: ${codice}`);
+    // STABILITÀ: due chiamate consecutive devono dare lo stesso codice (cruciale su Mac)
+    const codice2 = att.generaCodiceMacchina();
+    test("Codice macchina STABILE (Mac: ignora MAC randomizzati)", codice === codice2, codice !== codice2 ? `${codice} != ${codice2}` : "");
+    // Genera key per il codice
+    const keyCorretta = att.calcolaKeyPerCodice(codice);
+    test("Genera key (formato XXXXX-XXXXX-XXXXX-XXXXX)", /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/.test(keyCorretta), `ottenuto: ${keyCorretta}`);
+    // Valida key corretta
+    test("Key corretta viene accettata", att.validaKey(keyCorretta));
+    // Rifiuta key sbagliata
+    test("Key sbagliata viene rifiutata", !att.validaKey("AAAAA-BBBBB-CCCCC-DDDDD"));
+    // Tollera minuscole
+    test("Tollera key in minuscolo", att.validaKey(keyCorretta.toLowerCase()));
+    // 1 key = 1 PC: key di altro codice rifiutata
+    test("Key di un altro PC viene rifiutata (1 key = 1 PC)", !att.validaKey(att.calcolaKeyPerCodice("XXXX-YYYY-ZZZZ")));
+  } catch (e) {
+    test("Modulo attivazione funzionante", false, "errore: " + e.message);
+  }
+}
+
+// Verifico che il segreto sia identico tra attivazione.js e il generatore
+// (il generatore è in /home/claude ma sul PC sarà nella stessa cartella o consegnato a parte)
+if (esiste(path.join(ROOT, "attivazione.js"))) {
+  const attCode = leggi(path.join(ROOT, "attivazione.js"));
+  const segretoMatch = attCode.match(/const SEGRETO = '([^']+)'/);
+  test("Segreto di attivazione configurato", segretoMatch && segretoMatch[1].length > 10);
+}
+
+// Integrazione in main.js
+test("Attivazione integrata in main.js", mainCode.includes('require("./attivazione")'));
+test("Caricamento attivazione a prova di crash (try/catch)", mainCode.includes("Modulo attivazione non disponibile") || /try\s*{[^}]*require\("\.\/attivazione"\)/.test(mainCode));
+test("Handler codice macchina", mainCode.includes("attivazione-codice-macchina"));
+test("Handler verifica key", mainCode.includes("attivazione-verifica-key"));
+test("Controllo attivazione all'avvio", mainCode.includes("attivazione.eAttivato"));
+
+// CRITICO: i file attivazione DEVONO essere nella build di electron-builder,
+// altrimenti l'exe compilato dà "Cannot find module './attivazione'"
+try {
+  const pkgBuild = JSON.parse(leggi(path.join(ROOT, "package.json")));
+  const filesBuild = (pkgBuild.build && pkgBuild.build.files) || [];
+  test("attivazione.js incluso nella build (.exe)", filesBuild.includes("attivazione.js"),
+       !filesBuild.includes("attivazione.js") ? "MANCA in package.json build.files - l'exe non troverà il modulo!" : "");
+  test("attivazione.html incluso nella build (.exe)", filesBuild.includes("attivazione.html"),
+       !filesBuild.includes("attivazione.html") ? "MANCA in package.json build.files!" : "");
+} catch (e) {
+  test("Configurazione build leggibile", false, e.message);
+}
+
+// ============================================================================
 // TEST SPECIFICI DELLA PIATTAFORMA REALE (cambiano tra Windows e Mac)
 // ============================================================================
 const piattaforma = process.platform === "darwin" ? "Mac" :

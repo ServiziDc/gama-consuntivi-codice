@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attivazione - Gama Consuntivi</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1d2e 0%, #2d3142 100%);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      color: #2d3142;
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .logo .gama { color: #f59014; font-weight: 800; font-size: 28px; letter-spacing: -0.5px; }
+    .logo .service { color: #2d3142; font-weight: 800; font-size: 28px; }
+    .logo .srl { color: #999; font-size: 13px; font-weight: 600; }
+    .sottotitolo {
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+    .sezione-titolo {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    .codice-macchina {
+      background: #f4f5f7;
+      border: 2px dashed #cbd2d9;
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+      font-family: "JetBrains Mono", "Courier New", monospace;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #2d3142;
+      margin-bottom: 6px;
+      user-select: all;
+      cursor: pointer;
+    }
+    .codice-hint {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-bottom: 24px;
+    }
+    .btn-copia {
+      background: none;
+      border: none;
+      color: #f59014;
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    .input-key {
+      width: 100%;
+      padding: 16px;
+      border: 2px solid #cbd2d9;
+      border-radius: 10px;
+      font-family: "JetBrains Mono", "Courier New", monospace;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-align: center;
+      text-transform: uppercase;
+      color: #2d3142;
+      transition: border-color 0.2s;
+    }
+    .input-key:focus {
+      outline: none;
+      border-color: #f59014;
+    }
+    .input-key.errore {
+      border-color: #e74c3c;
+      animation: shake 0.4s;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      75% { transform: translateX(8px); }
+    }
+    .messaggio {
+      font-size: 13px;
+      text-align: center;
+      margin-top: 12px;
+      min-height: 18px;
+    }
+    .messaggio.errore { color: #e74c3c; }
+    .messaggio.successo { color: #27ae60; }
+    .btn-attiva {
+      width: 100%;
+      padding: 16px;
+      background: #f59014;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 20px;
+      transition: background 0.2s;
+    }
+    .btn-attiva:hover { background: #e07d00; }
+    .btn-attiva:disabled { background: #cbd2d9; cursor: not-allowed; }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 24px;
+      line-height: 1.6;
+    }
+    .footer a { color: #f59014; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <span class="gama">GAMA</span> <span class="service">SERVICE</span> <span class="srl">S.R.L.</span>
+    </div>
+    <p class="sottotitolo">Attivazione del programma Consuntivi</p>
+
+    <div class="sezione-titolo">Codice di questo computer</div>
+    <div class="codice-macchina" id="codiceMacchina" title="Clicca per copiare">caricamento...</div>
+    <div class="codice-hint">
+      Comunica questo codice per ricevere la chiave di attivazione
+      <button class="btn-copia" id="btnCopia">copia codice</button>
+    </div>
+
+    <label for="inputKey">Chiave di attivazione</label>
+    <input
+      type="text"
+      id="inputKey"
+      class="input-key"
+      placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+      maxlength="23"
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <div class="messaggio" id="messaggio"></div>
+
+    <button class="btn-attiva" id="btnAttiva">Attiva programma</button>
+
+    <div class="footer">
+      L'attivazione va fatta una sola volta su questo computer.<br>
+      Gama Service S.R.L. - Assistenza: info@gama-service.com
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    // Carico il codice macchina all'avvio
+    let codiceMacchina = '';
+    ipcRenderer.invoke('attivazione-codice-macchina').then((codice) => {
+      codiceMacchina = codice;
+      document.getElementById('codiceMacchina').textContent = codice;
+    });
+
+    // Copia codice macchina
+    document.getElementById('btnCopia').addEventListener('click', () => {
+      navigator.clipboard.writeText(codiceMacchina).then(() => {
+        const btn = document.getElementById('btnCopia');
+        const orig = btn.textContent;
+        btn.textContent = 'copiato!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      });
+    });
+    // Click sul codice = copia
+    document.getElementById('codiceMacchina').addEventListener('click', () => {
+      navigator.clipboard.writeText(codiceMacchina);
+      document.getElementById('btnCopia').textContent = 'copiato!';
+      setTimeout(() => { document.getElementById('btnCopia').textContent = 'copia codice'; }, 1500);
+    });
+
+    // Formattazione automatica della key mentre si digita (aggiunge i trattini)
+    const inputKey = document.getElementById('inputKey');
+    inputKey.addEventListener('input', (e) => {
+      let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      // Inserisco trattini ogni 5 caratteri
+      let formattato = val.match(/.{1,5}/g);
+      e.target.value = formattato ? formattato.join('-') : val;
+      e.target.classList.remove('errore');
+      document.getElementById('messaggio').textContent = '';
+    });
+
+    // Invio con Enter
+    inputKey.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') attiva();
+    });
+
+    document.getElementById('btnAttiva').addEventListener('click', attiva);
+
+    async function attiva() {
+      const key = inputKey.value.trim();
+      const msg = document.getElementById('messaggio');
+      const btn = document.getElementById('btnAttiva');
+
+      if (!key) {
+        msg.className = 'messaggio errore';
+        msg.textContent = 'Inserisci la chiave di attivazione';
+        inputKey.classList.add('errore');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Verifica in corso...';
+
+      const valida = await ipcRenderer.invoke('attivazione-verifica-key', key);
+
+      if (valida) {
+        msg.className = 'messaggio successo';
+        msg.textContent = '✓ Attivazione completata! Avvio del programma...';
+        btn.textContent = 'Attivato!';
+        setTimeout(() => {
+          ipcRenderer.invoke('attivazione-completata');
+        }, 1200);
+      } else {
+        msg.className = 'messaggio errore';
+        msg.textContent = 'Chiave non valida per questo computer. Controlla di averla digitata correttamente.';
+        inputKey.classList.add('errore');
+        btn.disabled = false;
+        btn.textContent = 'Attiva programma';
+      }
+    }
+  </script>
+</body>
+</html>

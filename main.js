@@ -9,6 +9,23 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const http = require("http");
 const https = require("https");
+// Carico il modulo attivazione in modo sicuro: se manca (es. build vecchia),
+// il programma parte lo stesso senza attivazione invece di crashare.
+let attivazione;
+try {
+  attivazione = require("./attivazione");
+} catch (e) {
+  console.error("Modulo attivazione non disponibile, avvio senza attivazione:", e.message);
+  // Fallback: oggetto fittizio che considera tutto già attivato
+  attivazione = {
+    generaCodiceMacchina: () => "NON-DISP-ONIBILE",
+    calcolaKeyPerCodice: () => "",
+    validaKey: () => true,
+    salvaLicenza: () => true,
+    leggiLicenza: () => null,
+    eAttivato: () => true   // se il modulo manca, NON blocco il programma
+  };
+}
 
 // ============================================================
 // CARICAMENTO DOCUMENTI SU GOOGLE DRIVE (tramite Cloud Function)
@@ -410,6 +427,59 @@ let avvisoDizionarioMostrato = false; // per non ripetere l'avviso "dizionario n
 let statoCorrettore = { disponibili: 0, attive: [], dizionari: {} };
 // Porta del server locale che fornisce i dizionari inclusi nel programma
 let portaServerDizionari = null;
+let finestraAttivazione = null;
+
+// ============================================================================
+//  ATTIVAZIONE: mostra la schermata che chiede la key (solo se non attivato)
+// ============================================================================
+function mostraFinestraAttivazione() {
+  finestraAttivazione = new BrowserWindow({
+    width: 560,
+    height: 720,
+    resizable: false,
+    fullscreenable: false,
+    maximizable: false,
+    title: "Attivazione - Gama Consuntivi",
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+  finestraAttivazione.setMenuBarVisibility(false);
+  finestraAttivazione.loadFile(path.join(__dirname, "attivazione.html"));
+
+  finestraAttivazione.on("closed", () => {
+    finestraAttivazione = null;
+    // Se chiude la finestra di attivazione SENZA attivare, esco dal programma
+    if (!attivazione.eAttivato(app) && !mainWindow) {
+      app.quit();
+    }
+  });
+}
+
+// Handler IPC per l'attivazione
+ipcMain.handle("attivazione-codice-macchina", () => {
+  return attivazione.generaCodiceMacchina();
+});
+
+ipcMain.handle("attivazione-verifica-key", (event, key) => {
+  const valida = attivazione.validaKey(key);
+  if (valida) {
+    attivazione.salvaLicenza(app, key);
+  }
+  return valida;
+});
+
+ipcMain.handle("attivazione-completata", () => {
+  // Chiudo la finestra di attivazione e apro il programma vero
+  if (finestraAttivazione) {
+    finestraAttivazione.close();
+    finestraAttivazione = null;
+  }
+  creaFinestra();
+  // Avvio anche il controllo aggiornamenti (non era partito perché non attivato)
+  try { configuraAutoUpdate(); } catch (e) {}
+});
 
 function creaFinestra() {
   mainWindow = new BrowserWindow({
@@ -1859,13 +1929,21 @@ app.whenReady().then(async () => {
   preparaDizionariOffline();
   await avviaServerDizionari();
 
-  creaFinestra();
-
-  // Avvio il controllo aggiornamenti dopo che la finestra è pronta
-  configuraAutoUpdate();
+  // CONTROLLO ATTIVAZIONE: se il programma non è ancora attivato su questo PC,
+  // mostro la schermata di attivazione. Altrimenti avvio normalmente.
+  if (attivazione.eAttivato(app)) {
+    creaFinestra();
+    // Avvio il controllo aggiornamenti dopo che la finestra è pronta
+    configuraAutoUpdate();
+  } else {
+    mostraFinestraAttivazione();
+  }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) creaFinestra();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      if (attivazione.eAttivato(app)) creaFinestra();
+      else mostraFinestraAttivazione();
+    }
   });
 });
 
