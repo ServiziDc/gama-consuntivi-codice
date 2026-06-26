@@ -2205,6 +2205,21 @@ window.accettaPreventivo = async (id, numero) => {
       : [{ oggetto: p.oggetto, importo: p.importo }];
     const totalePreventivo = offerte.reduce((s, o) => s + (parseFloat(o.importo) || 0), 0);
     const oggettoPreventivo = (offerte[0] && offerte[0].oggetto) || p.oggetto || "";
+
+    // Prima cancello eventuali righe già esistenti per questo preventivo (evita
+    // doppioni se si accetta più volte o si cambia sezione/mese di destinazione).
+    const vecchieMesi = new Set();
+    try {
+      const qVecchie = fb.query(fb.collection(fb.db, "consuntivi"),
+                                fb.where("preventivoId", "==", id));
+      const snapVecchie = await fb.getDocs(qVecchie);
+      for (const d of snapVecchie.docs) {
+        const m = d.data().mese;
+        if (m) vecchieMesi.add(m);
+        await fb.deleteDoc(fb.doc(fb.db, "consuntivi", d.id));
+      }
+    } catch (e) { console.warn("Pulizia righe preventivo precedenti:", e); }
+
     await fb.addDoc(fb.collection(fb.db, "consuntivi"), {
       tipo: "cbre",
       mese: scelta.mese,
@@ -2223,6 +2238,14 @@ window.accettaPreventivo = async (id, numero) => {
       creatoIl: new Date().toISOString(),
       operatore: state.utenteEmail || "",
     });
+
+    // Se la destinazione è cambiata, rigenero anche il vecchio mese (da template
+    // pulito) così la riga sparisce dall'Excel del mese precedente.
+    for (const vm of vecchieMesi) {
+      if (vm !== scelta.mese) {
+        setTimeout(() => { aggiornaExcelMese(vm, true).catch(()=>{}); }, 900);
+      }
+    }
 
     // Aggiorno (o creo) il file Excel del mese scelto con la riga del preventivo
     const rExcel = await aggiornaExcelMese(scelta.mese);
@@ -2590,6 +2613,18 @@ window.eliminaPreventivo = async (id, numero) => {
     await fb.deleteDoc(fb.doc(fb.db, "preventivi", id));
   } catch (e) { showToast("⚠️ Errore: " + e.message, "error"); return; }
 
+  // Cancello anche la riga creata in "consuntivi" quando il preventivo era stato
+  // accettato (campo daPreventivo:true + preventivoId). Senza questo la riga
+  // "PREVENTIVO NR X ACCETTATO" resterebbe nell'Excel e nella PWA.
+  try {
+    const qC = fb.query(fb.collection(fb.db, "consuntivi"),
+                        fb.where("preventivoId", "==", id));
+    const snapC = await fb.getDocs(qC);
+    for (const d of snapC.docs) {
+      await fb.deleteDoc(fb.doc(fb.db, "consuntivi", d.id));
+    }
+  } catch (e) { console.warn("Eliminazione riga consuntivi del preventivo:", e); }
+
   // Cancello il file .docx
   let fileMsg = "";
   if (state.isElectron && dati && window.electronAPI.eliminaFileConsuntivo) {
@@ -2603,9 +2638,10 @@ window.eliminaPreventivo = async (id, numero) => {
     } catch (e) { console.warn("Eliminazione file preventivo:", e); }
   }
 
-  // Se era accettato, rigenero l'Excel del mese di destinazione (così la riga PREV sparisce)
+  // Se era accettato, rigenero l'Excel del mese di destinazione da template
+  // PULITO (forzaRicostruzione=true) così la riga del preventivo sparisce davvero.
   if (dati && dati.excelMese) {
-    setTimeout(() => { aggiornaExcelMese(dati.excelMese).catch(()=>{}); }, 700);
+    setTimeout(() => { aggiornaExcelMese(dati.excelMese, true).catch(()=>{}); }, 700);
   }
 
   showToast(`🗑️ Preventivo NR ${numero} eliminato${fileMsg}`, "success", 6000);
@@ -4318,6 +4354,33 @@ async function listaCbreConPreventiviAccettati(yyyymm) {
     consuntiviCbre = [];
     snap.forEach(d => consuntiviCbre.push({ id: d.id, ...d.data() }));
   }
+
+  // Deduplica le righe dei preventivi accettati: se per errore esistono più
+  // righe con lo stesso preventivoId (es. accettato più volte in passato),
+  // tengo solo la più recente ed elimino le altre da Firestore.
+  try {
+    const perPrev = {};
+    consuntiviCbre.forEach(c => {
+      if (c.preventivoId) {
+        (perPrev[c.preventivoId] = perPrev[c.preventivoId] || []).push(c);
+      }
+    });
+    const idDaRimuovere = new Set();
+    for (const pid of Object.keys(perPrev)) {
+      const righe = perPrev[pid];
+      if (righe.length > 1) {
+        // Ordino per creatoIl (più recente in cima), tengo la prima
+        righe.sort((a, b) => String(b.creatoIl || "").localeCompare(String(a.creatoIl || "")));
+        for (let i = 1; i < righe.length; i++) {
+          idDaRimuovere.add(righe[i].id);
+          try { await fb.deleteDoc(fb.doc(fb.db, "consuntivi", righe[i].id)); } catch (e) {}
+        }
+      }
+    }
+    if (idDaRimuovere.size) {
+      consuntiviCbre = consuntiviCbre.filter(c => !idDaRimuovere.has(c.id));
+    }
+  } catch (e) { console.warn("Deduplica preventivi accettati:", e); }
 
   // Preventivi accettati: NON li leggo più dalla collection "preventivi".
   // Ora quando un preventivo viene accettato viene salvata una riga nella

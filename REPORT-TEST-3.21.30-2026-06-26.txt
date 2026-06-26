@@ -1,0 +1,107 @@
+
+==============================================================
+          GAMA CONSUNTIVI - TEST AUTOMATICO COMPLETO
+==============================================================
+
+  Versione testata: 3.21.30
+  Data test: 26/06/2026, 07:59:20
+
+=== FASE A - INTEGRITÀ FILE (sintassi JavaScript) ===
+    [OK] main.js (processo principale) - sintassi valida
+    [OK] preload.js (ponte sicurezza) - sintassi valida
+    [OK] src/app.js (logica app) - sintassi valida
+
+=== FASE B - BILANCIAMENTO PARENTESI ===
+    [OK] main.js (processo principale) - graffe bilanciate
+    [OK] main.js (processo principale) - quadre bilanciate
+    [OK] preload.js (ponte sicurezza) - graffe bilanciate
+    [OK] preload.js (ponte sicurezza) - quadre bilanciate
+    [OK] src/app.js (logica app) - graffe bilanciate
+    [OK] src/app.js (logica app) - quadre bilanciate
+
+=== FASE C - CATENA IPC (preload ↔ main) ===
+    [OK] Almeno 1 funzione IPC definita
+    [OK] Tutte le 31 funzioni hanno il loro handler
+
+=== FASE D - GENERAZIONE PDF (Windows + Mac) ===
+    [OK] Conversione Windows (PowerShell .ps1)
+    [OK] Conversione Mac (AppleScript)
+    [OK] Fallback LibreOffice su Mac
+    [OK] Fallback LibreOffice su Linux/test
+    [OK] Sanificazione nome file PDF
+    [OK] Gestione formato PDF Word (wdFormatPDF=17)
+    [OK] Pulizia file temporanei .ps1
+
+=== FASE E - PDF SUL DESKTOP (3 pulsanti) ===
+    [OK] Funzione salvaAnteprimaPdf esiste
+    [OK] Anteprima preventivo usa template corretto
+    [OK] Anteprima → prefisso ANTEPRIMA (true)
+    [OK] Genera consuntivo → PDF Desktop senza prefisso (false)
+    [OK] Genera preventivo → PDF Desktop senza prefisso (false)
+    [OK] Handler PDF Desktop in main
+    [OK] Parametro isAnteprima gestito
+
+=== FASE F - PREVENTIVI (accetta / elimina / doppioni) ===
+    [OK] Accettazione salva in collection consuntivi
+    [OK] Accettazione usa tipo 'cbre'
+    [OK] Pulizia righe precedenti (anti-doppione)
+    [OK] Deduplica preventivi accettati
+    [OK] Eliminazione cancella riga consuntivi
+    [OK] Eliminazione rigenera Excel forzato
+    [OK] Cambio mese rigenera vecchio mese
+
+=== FASE G - CONSUNTIVI (campi e calcoli) ===
+    [OK] Ore di viaggio presente
+    [OK] Calcolo costo viaggio
+    [OK] Nascondi 'A corpo'
+    [OK] ODL multipli
+    [OK] Colori righe manuali
+    [OK] Ore extra
+    [OK] Totale a mano
+    [OK] Funzione calcolaTotaleConsuntivo
+
+=== FASE H - EXCEL (generazione celle) ===
+    [OK] applicaModificheCelle 2 passate
+    [OK] Inserimento celle in righe vuote
+    [OK] Formato numero italiano (it-IT)
+    [OK] Rigenerazione forzata da template
+    [OK] Funzione aggiornaExcelMese
+
+=== FASE I - TEST LOGICI (calcoli reali) ===
+    [OK] Calcolo totale 3 offerte (=5000€)
+    [OK] Calcolo ore+viaggio+materiale (=866€)
+    [OK] Mappatura colori pagamento (roundtrip)
+    [OK] Sanificazione rimuove punti
+    [OK] Sanificazione tronca nomi lunghi (≤100)
+    [OK] Menu mesi: 12 mesi anno corrente (2026)
+    [OK] Ciclo preventivo: accetta → appare
+    [OK] Ciclo preventivo: elimina → sparisce
+    [OK] Deduplica: 2 doppioni → 1 riga
+    [OK] Deduplica: consuntivo normale intatto
+
+=== FASE L - PACKAGING (file necessari) ===
+    [OK] package.json presente
+    [OK] PUBBLICA-AGGIORNAMENTO.bat presente
+    [OK] Cartella assets presente
+    [OK] Template CBRE presente
+    [OK] Template preventivo presente
+    [OK] Timbro presente
+    [OK] Workflow GitHub Actions (build Mac)
+
+=== FASE M - AMBIENTE REALE (Windows) ===
+    Sistema operativo rilevato: Windows (win32)
+    Versione Node.js: v24.14.1
+    [OK] Microsoft Word installato (per PDF Windows)
+    [OK] PowerShell disponibile
+
+==============================================================
+                      REPORT FINALE
+==============================================================
+  Versione:        3.21.30
+  Test totali:     64
+  Test superati:   64
+  Test falliti:    0
+  Percentuale:     100%
+==============================================================
+
+  [OK] TUTTO OK - Nessun errore. La release e' pronta per la pubblicazione!
