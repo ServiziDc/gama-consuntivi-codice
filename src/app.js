@@ -722,6 +722,10 @@ function setupRealtimeListeners() {
     fb.where("mese", "==", state.meseCorrente)
   );
   fb.onSnapshot(q, (snap) => {
+    // Salvo gli stati pagamento PRECEDENTI per capire se la PWA ne ha cambiato uno
+    const statiPrecedenti = {};
+    (state.consuntiviMese || []).forEach(c => { statiPrecedenti[c.id] = c.statoPagamento || ""; });
+
     state.consuntiviMese = [];
     snap.forEach(d => state.consuntiviMese.push({ id: d.id, ...d.data() }));
     state.consuntiviMese.sort((a,b) => {
@@ -736,6 +740,33 @@ function setupRealtimeListeners() {
     if (!state._importExcelFatto) {
       state._importExcelFatto = true;
       importaModificheExcelAllAvvio();
+    } else {
+      // Controllo se è cambiato qualche statoPagamento (es. colore messo dalla
+      // PWA o dallo storico di un altro PC). Se sì, rigenero l'Excel sul NAS così
+      // il colore compare anche nel file vero, non solo nella pagina web.
+      // NB: se il cambio è stato fatto DA QUESTO desktop (setStatoPagamento ha già
+      // rigenerato), salto per non rigenerare due volte.
+      if (state._coloreCambiatoLocale) {
+        state._coloreCambiatoLocale = false;
+      } else {
+        let coloreCambiatoCbre = false;
+        let coloreCambiatoCreval = false;
+        state.consuntiviMese.forEach(c => {
+          const prima = statiPrecedenti[c.id];
+          const ora = c.statoPagamento || "";
+          // prima !== undefined: era già presente (non è una riga appena creata)
+          if (prima !== undefined && prima !== ora) {
+            if (c.tipo === "creval") coloreCambiatoCreval = true;
+            else coloreCambiatoCbre = true;
+          }
+        });
+        if (coloreCambiatoCbre) {
+          aggiornaExcelMese(state.meseCorrente, true, true).catch(()=>{});
+        }
+        if (coloreCambiatoCreval) {
+          aggiornaExcelCrevalMese(state.meseCorrente, true, true).catch(()=>{});
+        }
+      }
     }
   });
 
@@ -3474,18 +3505,56 @@ function refreshStoricoLista(lista, mese, titoloRicerca) {
 // Imposta lo stato pagamento (colore) di un consuntivo e ricolora la riga
 window.setStatoPagamento = async (id, stato, tipo, mese) => {
   try {
+    // Segnalo che il cambio colore è LOCALE, così il listener Firestore non
+    // rigenera l'Excel una seconda volta (lo facciamo già qui sotto).
+    state._coloreCambiatoLocale = true;
     await fb.setDoc(fb.doc(fb.db, "consuntivi", id), { statoPagamento: stato }, { merge: true });
+    // Aggiorno lo stato in memoria (sia nella lista del mese corrente, se presente)
     const it = state.consuntiviMese.find(c => c.id === id);
     if (it) it.statoPagamento = stato;
     caricaStoricoFiltrato();
     const lbl = stato === "pagato" ? "Pagato" : (stato === "parziale" ? "Parzialmente pagato" : "Nessuno");
-    showToast(`Stato aggiornato: ${lbl}. Aggiorno l'Excel...`, "success", 2500);
+
+    // Recupero mese e tipo se non sono stati passati (es. lista filtrata/ricerca):
+    // li leggo dal consuntivo in memoria o, in ultima istanza, da Firestore.
+    let meseFinale = mese;
+    let tipoFinale = tipo;
+    let dati = it;
+    if (!dati) {
+      try {
+        const snap = await fb.getDoc(fb.doc(fb.db, "consuntivi", id));
+        if (snap.exists()) dati = { id, ...snap.data() };
+      } catch (e) {}
+    }
+    if (dati) {
+      if (!meseFinale) meseFinale = dati.mese || (dati.dataDocumento ? dati.dataDocumento.slice(0, 7) : "");
+      if (!tipoFinale) tipoFinale = dati.tipo || "cbre";
+    }
+
     // Riporto il colore anche nell'Excel del mese. Ricostruzione PULITA: il colore
-    // deriva dal dato (statoPagamento), quindi viene ri-applicato a ogni rigenerazione
-    // e gli stati rimossi tornano bianchi in modo affidabile.
-    if (mese) {
-      if (tipo === "creval") await aggiornaExcelCrevalMese(mese, true);
-      else await aggiornaExcelMese(mese, true);
+    // deriva dal dato (statoPagamento) letto FRESCO da Firestore dentro la funzione
+    // di rigenerazione, quindi il colore appena salvato viene sempre applicato.
+    if (meseFinale) {
+      showToast(`Stato: ${lbl}. Aggiorno l'Excel del mese...`, "success", 2500);
+      let res;
+      if (tipoFinale === "creval") res = await aggiornaExcelCrevalMese(meseFinale, true, true);
+      else res = await aggiornaExcelMese(meseFinale, true, true);
+      // Avviso se l'Excel non è stato salvato (es. cartella NAS non impostata o file aperto)
+      if (res && res.ok === false) {
+        if (res.motivo === "file aperto") {
+          // già avvisato dentro la funzione
+        } else if (res.motivo === "nessun consuntivo") {
+          showToast("⚠️ Colore salvato, ma nessun Excel da aggiornare per questo mese.", "warn", 5000);
+        } else if (!state.cartellaRoot) {
+          showToast("⚠️ Colore salvato su cloud, ma la cartella del NAS non è impostata: l'Excel sul NAS non è stato aggiornato. Imposta la cartella nelle impostazioni.", "warn", 8000);
+        } else {
+          showToast("⚠️ Colore salvato, ma l'Excel non è stato aggiornato: " + (res.errore || res.motivo || "motivo sconosciuto"), "warn", 7000);
+        }
+      } else if (res && res.ok) {
+        showToast(`✅ Excel aggiornato col colore ${lbl}.`, "success", 2500);
+      }
+    } else {
+      showToast("⚠️ Colore salvato, ma non riesco a capire il mese per aggiornare l'Excel.", "warn", 6000);
     }
   } catch (e) {
     showToast("Errore nel salvare lo stato: " + (e.message || e), "error");
@@ -4342,9 +4411,9 @@ function setCellNum(ws, addr, value) {
 // Raccoglie i dati per l'Excel CBRE del mese: consuntivi CBRE + preventivi
 // ACCETTATI destinati a quel file Excel (campo excelMese/excelSezione).
 // Usata SIA dalla scrittura SIA dall'import, così le posizioni combaciano sempre.
-async function listaCbreConPreventiviAccettati(yyyymm) {
+async function listaCbreConPreventiviAccettati(yyyymm, forzaRilettura = false) {
   let consuntiviCbre;
-  if (yyyymm === state.meseCorrente) {
+  if (yyyymm === state.meseCorrente && !forzaRilettura) {
     consuntiviCbre = state.consuntiviMese.filter(c => c.tipo === "cbre");
   } else {
     const q = fb.query(fb.collection(fb.db, "consuntivi"),
@@ -4417,9 +4486,9 @@ async function listaCbreConPreventiviAccettati(yyyymm) {
   return consuntiviCbre.concat(pseudo);
 }
 
-async function aggiornaExcelMese(yyyymm, forzaRicostruzione = false) {
+async function aggiornaExcelMese(yyyymm, forzaRicostruzione = false, forzaRilettura = false) {
   // Consuntivi CBRE del mese + preventivi accettati destinati a questo Excel
-  const consuntiviCbre = await listaCbreConPreventiviAccettati(yyyymm);
+  const consuntiviCbre = await listaCbreConPreventiviAccettati(yyyymm, forzaRilettura);
 
   if (!consuntiviCbre.length) {
     console.log(`Nessun dato CBRE per ${yyyymm}, salto creazione Excel`);
@@ -4878,9 +4947,9 @@ async function importaModificheExcelAllAvvio() {
   }
 }
 
-async function aggiornaExcelCrevalMese(yyyymm, forzaRicostruzione = false) {
+async function aggiornaExcelCrevalMese(yyyymm, forzaRicostruzione = false, forzaRilettura = false) {
   let consuntiviCreval;
-  if (yyyymm === state.meseCorrente) {
+  if (yyyymm === state.meseCorrente && !forzaRilettura) {
     consuntiviCreval = state.consuntiviMese.filter(c => c.tipo === "creval");
   } else {
     const q = fb.query(fb.collection(fb.db, "consuntivi"),
