@@ -253,6 +253,13 @@ test("Tabella voci: calcolo P.Totale (qta×pu)", appCode.includes("qta * pu"));
 test("Tabella voci: sostituisce tabella Word", appCode.includes("costruisciTabellaVociXml(voci, totaleOfferta)"));
 test("Tabella voci: pulsante aggiungi", appCode.includes("prev-aggiungi-voce"));
 
+// Ore di viaggio nel Word + U.M. sui materiali
+test("Ore di viaggio nella tabella Word/PDF", appCode.includes('tit: "Ore di Viaggio"'));
+test("Materiali: tendina U.M. (a corpo, n, mt...)", appCode.includes("mat-um-sel") && appCode.includes("UNITA_MISURA_PREV"));
+test("Materiali: U.M. scrivibile (Altro)", appCode.includes("mat-um-altro") && appCode.includes("__ALTRO__"));
+test("Materiali: U.M. compare nel Word", appCode.includes("m.um.trim() : (c.nascondiaCorpo"));
+test("Materiali: U.M. salvata e ripristinata", appCode.includes("aggiungiMaterialeExtra(m.descr, m.costo, m.um)"));
+
 // Storico preventivi: navigazione tra i mesi (fetch da Firebase)
 test("Storico prev: selettore mese", leggi(path.join(ROOT, "src/index.html")).includes('id="prevStoricoMese"'));
 test("Storico prev: pulsanti prec/succ/oggi", appCode.includes("spostaMeseStoricoPreventivi") && appCode.includes("prevStoricoOggi"));

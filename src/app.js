@@ -1234,7 +1234,10 @@ function leggiMaterialiExtra() {
   container.querySelectorAll(".materiale-extra-riga").forEach(riga => {
     const descr = (riga.querySelector(".mat-descr")?.value || "").trim();
     const costo = parseFloat(riga.querySelector(".mat-costo")?.value) || 0;
-    if (descr || costo !== 0) materiali.push({ descr, costo });
+    const selUm = riga.querySelector(".mat-um-sel");
+    const umAltro = riga.querySelector(".mat-um-altro");
+    const um = selUm ? (selUm.value === "__ALTRO__" ? (umAltro?.value || "").trim() : selUm.value) : "";
+    if (descr || costo !== 0) materiali.push({ descr, costo, um });
   });
   return materiali;
 }
@@ -1244,17 +1247,37 @@ function sincronizzaMaterialiExtraJson() {
   if (hidden) hidden.value = JSON.stringify(leggiMaterialiExtra());
 }
 
-function aggiungiMaterialeExtra(descr = "", costo = "") {
+function aggiungiMaterialeExtra(descr = "", costo = "", um = "") {
   const container = document.getElementById("materialiExtraContainer");
   if (!container) return;
   const riga = document.createElement("div");
   riga.className = "materiale-extra-riga";
   riga.style.cssText = "display:flex;gap:8px;margin-bottom:6px;align-items:center";
+  const optsUm = UNITA_MISURA_PREV.map(u => `<option value="${u}">${u}</option>`).join("");
   riga.innerHTML = `
     <input type="text" class="mat-descr" placeholder="Descrizione materiale (es. Compressore)" style="flex:2" value="${escapeHtml(String(descr))}">
+    <select class="mat-um-sel" style="flex:0 0 90px" title="Unità di misura">${optsUm}<option value="__ALTRO__">Altro...</option></select>
+    <input type="text" class="mat-um-altro" placeholder="U.M." style="flex:0 0 70px;display:none" value="">
     <input type="number" class="mat-costo" step="0.01" placeholder="Costo €" style="flex:1" value="${costo !== "" ? costo : ""}">
     <button type="button" class="btn-mini danger mat-rimuovi" title="Rimuovi materiale">✖</button>
   `;
+  const selUm = riga.querySelector(".mat-um-sel");
+  const inpUmAltro = riga.querySelector(".mat-um-altro");
+  // Precompilo la U.M. se fornita (da un consuntivo salvato)
+  if (um && UNITA_MISURA_PREV.includes(um)) {
+    selUm.value = um;
+  } else if (um) {
+    selUm.value = "__ALTRO__";
+    inpUmAltro.style.display = "";
+    inpUmAltro.value = um;
+  }
+  // Tendina che sblocca la casella "scrivi tu" quando scelgo "Altro..."
+  selUm.addEventListener("change", () => {
+    if (selUm.value === "__ALTRO__") { inpUmAltro.style.display = ""; inpUmAltro.focus(); }
+    else { inpUmAltro.style.display = "none"; inpUmAltro.value = ""; }
+    sincronizzaMaterialiExtraJson();
+    ricalcolaTotale();
+  });
   riga.querySelector(".mat-rimuovi").addEventListener("click", () => {
     riga.remove();
     sincronizzaMaterialiExtraJson();
@@ -1273,7 +1296,7 @@ function impostaMaterialiExtra(materiali) {
   const container = document.getElementById("materialiExtraContainer");
   if (!container) return;
   container.innerHTML = "";
-  (materiali || []).forEach(m => aggiungiMaterialeExtra(m.descr, m.costo));
+  (materiali || []).forEach(m => aggiungiMaterialeExtra(m.descr, m.costo, m.um));
   sincronizzaMaterialiExtraJson();
 }
 
@@ -1671,11 +1694,18 @@ async function buildDocx(c) {
   if (c.oreExtra && c.oreExtra > 0 && c.tariffaExtra && c.tariffaExtra > 0) {
     righe.push({ tit: "Manodopera Tecnico Specializzato", sub: `Tariffa oraria € ${formatEuro(c.tariffaExtra)}`, qta: `${formatNumero(c.oreExtra)} ore`, imp: c.oreExtra * c.tariffaExtra });
   }
+  if (c.oreViaggio && c.oreViaggio > 0 && c.tariffaViaggio && c.tariffaViaggio > 0) {
+    righe.push({ tit: "Ore di Viaggio", sub: `Tariffa oraria € ${formatEuro(c.tariffaViaggio)}`, qta: `${formatNumero(c.oreViaggio)} ore`, imp: c.oreViaggio * c.tariffaViaggio });
+  }
   if (c.costoMateriale && c.costoMateriale > 0) {
     righe.push({ tit: "Materiali e Consumabili", sub: c.descrMateriale || "", qta: c.nascondiaCorpo ? "—" : "A corpo", imp: c.costoMateriale });
   }
   (c.materialiExtra || []).forEach(m => {
-    if ((m.descr || "").trim() || (m.costo || 0) !== 0) righe.push({ tit: (m.descr || "Materiale").trim(), sub: "", qta: c.nascondiaCorpo ? "—" : "A corpo", imp: m.costo || 0 });
+    if ((m.descr || "").trim() || (m.costo || 0) !== 0) {
+      // La colonna quantità mostra la U.M. se presente (a corpo, n, mt...), altrimenti "A corpo"
+      const qtaMat = (m.um || "").trim() ? m.um.trim() : (c.nascondiaCorpo ? "—" : "A corpo");
+      righe.push({ tit: (m.descr || "Materiale").trim(), sub: "", qta: qtaMat, imp: m.costo || 0 });
+    }
   });
   if (c.smaltimento && c.smaltimento !== 0) righe.push({ tit: "Smaltimento", sub: "", qta: "—", imp: c.smaltimento });
   if ((c.noloPiattaforma || 0) !== 0) righe.push({ tit: "Nolo Piattaforma", sub: "", qta: "—", imp: c.noloPiattaforma });
@@ -3967,7 +3997,8 @@ function mostraPreview() {
   // Materiali extra (aggiunti col +)
   (c.materialiExtra || []).forEach(m => {
     if ((m.descr || "").trim() || (m.costo || 0) !== 0) {
-      txt += `${(m.descr || "MATERIALE").trim()} = € ${formatEuro(m.costo || 0)}\n\n`;
+      const umTxt = (m.um || "").trim() ? ` (${m.um.trim()})` : "";
+      txt += `${(m.descr || "MATERIALE").trim()}${umTxt} = € ${formatEuro(m.costo || 0)}\n\n`;
     }
   });
   if (c.smaltimento !== 0) {
