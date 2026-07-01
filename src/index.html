@@ -423,7 +423,13 @@ VIA VERROTTI 65015 MONTESILVANO (PE)</textarea>
       </form>
 
       <div class="storico-dedicato" style="margin-top:24px;border-top:2px solid #e5e7eb;padding-top:16px">
-        <h3>📚 Storico Preventivi (mese corrente)</h3>
+        <h3>📚 Storico Preventivi</h3>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button id="prevStoricoMesePrec" class="btn-mini" title="Mese precedente" style="font-size:16px;padding:4px 12px">◀</button>
+          <input type="month" id="prevStoricoMese" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+          <button id="prevStoricoMeseSucc" class="btn-mini" title="Mese successivo" style="font-size:16px;padding:4px 12px">▶</button>
+          <button id="prevStoricoOggi" class="btn-mini" title="Torna al mese corrente" style="padding:4px 12px">Oggi</button>
+        </div>
         <div id="prevStoricoStats" class="storico-stats"></div>
         <table class="storico-tabella">
           <thead>

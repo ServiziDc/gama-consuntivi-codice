@@ -1984,6 +1984,9 @@ function setupPreventivoTab() {
   const btnAgg = document.getElementById("btnAggiungiPreventivo");
   if (btnAgg) btnAgg.addEventListener("click", () => aggiungiBloccoPreventivo());
 
+  // Navigazione tra i mesi nello storico preventivi
+  setupNavigazioneStoricoPreventivi();
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     await generaPreventivo();
@@ -2422,14 +2425,61 @@ function aggiornaPrevNumeroUI() {
 }
 
 // --- STORICO PREVENTIVI ---
+// Mese attualmente visualizzato nello storico (default: mese corrente).
+// Se diverso dal mese corrente, i dati vengono letti da Firebase.
 function refreshStoricoPreventivi() {
+  // Se sto guardando un mese passato, non sovrascrivo con i dati live del mese corrente
+  if (state.prevStoricoMeseVisualizzato && state.prevStoricoMeseVisualizzato !== state.meseCorrente) {
+    return;
+  }
+  renderStoricoPreventivi(state.preventiviMese || [], state.meseCorrente);
+}
+
+// Carica i preventivi di un mese specifico (live se corrente, fetch se passato)
+async function caricaStoricoPreventiviMese(mese) {
+  if (!mese) return;
+  state.prevStoricoMeseVisualizzato = mese;
+  const tbody = document.getElementById("prevStoricoBody");
+
+  let lista;
+  if (mese === state.meseCorrente) {
+    lista = state.preventiviMese || [];
+  } else {
+    // Mese passato: leggo da Firebase
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="empty">Caricamento…</td></tr>`;
+    try {
+      const q = fb.query(
+        fb.collection(fb.db, "preventivi"),
+        fb.where("mese", "==", mese)
+      );
+      const snap = await fb.getDocs(q);
+      lista = [];
+      snap.forEach(d => lista.push({ id: d.id, ...d.data() }));
+      lista.sort((a,b) => (a.numero || 0) - (b.numero || 0));
+    } catch (e) {
+      console.warn("Fetch preventivi mese:", e);
+      if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="empty">Errore nel caricamento dei preventivi.</td></tr>`;
+      return;
+    }
+  }
+  renderStoricoPreventivi(lista, mese);
+}
+
+// Disegna la tabella dello storico preventivi con una lista e il mese
+function renderStoricoPreventivi(lista, mese) {
   const tbody = document.getElementById("prevStoricoBody");
   const stats = document.getElementById("prevStoricoStats");
   if (!tbody) return;
-  const lista = state.preventiviMese || [];
+
+  // Sincronizzo il selettore di mese
+  const inpMese = document.getElementById("prevStoricoMese");
+  if (inpMese && mese) inpMese.value = mese;
+
+  const eMeseCorrente = (mese === state.meseCorrente);
 
   if (!lista.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty">Nessun preventivo questo mese.</td></tr>`;
+    const testoMese = eMeseCorrente ? "questo mese" : "in " + (mese || "questo mese");
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">Nessun preventivo ${testoMese}.</td></tr>`;
     if (stats) stats.innerHTML = "";
     return;
   }
@@ -2458,6 +2508,29 @@ function refreshStoricoPreventivi() {
       </td>
     </tr>`;
   }).join("");
+}
+
+// Sposta il mese visualizzato di +/- 1 mese
+function spostaMeseStoricoPreventivi(delta) {
+  const attuale = state.prevStoricoMeseVisualizzato || state.meseCorrente;
+  const [anno, mese] = attuale.split("-").map(Number);
+  const d = new Date(anno, mese - 1 + delta, 1);
+  const nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  caricaStoricoPreventiviMese(nuovoMese);
+}
+
+// Collega i pulsanti di navigazione dello storico preventivi
+function setupNavigazioneStoricoPreventivi() {
+  const inpMese = document.getElementById("prevStoricoMese");
+  const btnPrec = document.getElementById("prevStoricoMesePrec");
+  const btnSucc = document.getElementById("prevStoricoMeseSucc");
+  const btnOggi = document.getElementById("prevStoricoOggi");
+
+  if (inpMese && !inpMese.value) inpMese.value = state.meseCorrente;
+  if (inpMese) inpMese.addEventListener("change", () => caricaStoricoPreventiviMese(inpMese.value));
+  if (btnPrec) btnPrec.addEventListener("click", () => spostaMeseStoricoPreventivi(-1));
+  if (btnSucc) btnSucc.addEventListener("click", () => spostaMeseStoricoPreventivi(1));
+  if (btnOggi) btnOggi.addEventListener("click", () => caricaStoricoPreventiviMese(state.meseCorrente));
 }
 
 // Mostra il modal e chiede sezione Excel + mese. Risolve {sezione, mese} o null se annullato.

@@ -253,6 +253,13 @@ test("Tabella voci: calcolo P.Totale (qta×pu)", appCode.includes("qta * pu"));
 test("Tabella voci: sostituisce tabella Word", appCode.includes("costruisciTabellaVociXml(voci, totaleOfferta)"));
 test("Tabella voci: pulsante aggiungi", appCode.includes("prev-aggiungi-voce"));
 
+// Storico preventivi: navigazione tra i mesi (fetch da Firebase)
+test("Storico prev: selettore mese", leggi(path.join(ROOT, "src/index.html")).includes('id="prevStoricoMese"'));
+test("Storico prev: pulsanti prec/succ/oggi", appCode.includes("spostaMeseStoricoPreventivi") && appCode.includes("prevStoricoOggi"));
+test("Storico prev: fetch da Firebase mesi passati", appCode.includes("function caricaStoricoPreventiviMese") && appCode.includes("fb.getDocs"));
+test("Storico prev: non sovrascrive mese passato con live", appCode.includes("prevStoricoMeseVisualizzato !== state.meseCorrente"));
+test("Storico prev: navigazione collegata all'avvio", appCode.includes("setupNavigazioneStoricoPreventivi();"));
+
 // ============================================================================
 sezione("FASE G - CONSUNTIVI (campi e calcoli)");
 
