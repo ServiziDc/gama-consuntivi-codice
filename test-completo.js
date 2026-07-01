@@ -220,9 +220,12 @@ test("Parametro isAnteprima gestito", mainCode.includes("isAnteprima"));
 
 // Conversione PDF cross-platform (Windows + Mac)
 test("Mac: PDF generato in locale poi spostato (no problemi NAS)", mainCode.includes("pdfTmpLocale") && mainCode.includes("spostaPdfFinale"));
+test("Mac: cartella temp sicura in Home (no /var/folders bloccata)", mainCode.includes("function cartellaTempSicura") && mainCode.includes(".gama-consuntivi-temp"));
+test("Mac: conversione usa cartella temp sicura", mainCode.includes("cartellaTempSicura()"));
+test("Mac: messaggio chiaro se permesso Word negato", mainCode.includes("Automazione") && mainCode.includes("Privacy e Sicurezza"));
 test("Mac: Word come prima scelta", mainCode.includes('tell application "Microsoft Word"'));
 test("Mac: fallback LibreOffice", mainCode.includes("sofficeEsistente"));
-test("Mac: messaggio chiaro se manca Word/LibreOffice", mainCode.includes("Installa Word o LibreOffice sul Mac"));
+test("Mac: messaggio chiaro se manca Word/LibreOffice", mainCode.includes("installa LibreOffice come alternativa") || mainCode.includes("Automazione"));
 test("Windows: PowerShell per conversione", mainCode.includes("powershell") && mainCode.includes("Word.Application"));
 test("Windows: rileva Word mancante", mainCode.includes("Microsoft Word non risulta installato"));
 test("Temp conversione nome pulito (no apostrofi)", mainCode.includes("gama_tmp_"));

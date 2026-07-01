@@ -9,6 +9,23 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const http = require("http");
 const https = require("https");
+
+// Cartella temporanea SICURA per le conversioni PDF.
+// Su Mac la cartella di sistema (/var/folders/...) è "nascosta" e Word/macOS
+// bloccano l'accesso chiedendo permessi che l'utente non riesce a concedere.
+// Uso invece una cartella dentro la Home dell'utente (~/.gama-consuntivi-temp),
+// che è sempre accessibile senza richieste di permesso.
+function cartellaTempSicura() {
+  try {
+    const base = path.join(app.getPath("home"), ".gama-consuntivi-temp");
+    if (!fs.existsSync(base)) fs.mkdirSync(base, { recursive: true });
+    return base;
+  } catch (e) {
+    // Ripiego: se non riesco a creare in Home, uso la temp di sistema
+    try { return app.getPath("temp"); } catch (e2) { return require("os").tmpdir(); }
+  }
+}
+
 // Carico il modulo attivazione in modo sicuro: se manca (es. build vecchia),
 // il programma parte lo stesso senza attivazione invece di crashare.
 let attivazione;
@@ -901,7 +918,7 @@ function convertiDocxInPdf(docxPath, pdfPath) {
       // di rete (NAS). Quindi genero prima in una cartella LOCALE temporanea, poi
       // sposto il PDF nella destinazione finale.
       const pdfFinale = pdfPath;
-      const pdfTmpLocale = path.join(app.getPath("temp"), "gama_pdf_" + Date.now() + ".pdf");
+      const pdfTmpLocale = path.join(cartellaTempSicura(), "gama_pdf_" + Date.now() + ".pdf");
 
       const docxEscaped = docxPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       const pdfEscaped  = pdfTmpLocale.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -920,7 +937,7 @@ on run
   end tell
 end run
 `.trim();
-      const tmpScript = path.join(app.getPath("temp"), "conv_" + Date.now() + ".scpt");
+      const tmpScript = path.join(cartellaTempSicura(), "conv_" + Date.now() + ".scpt");
       try { fs.writeFileSync(tmpScript, script, "utf8"); } catch(e) {}
 
       // Funzione che sposta il PDF dal temp locale alla destinazione finale
@@ -950,16 +967,33 @@ end run
         ];
         const sofficeEsistente = sofficePaths.find(p => { try { return fs.existsSync(p); } catch(e) { return false; } });
         if (!sofficeEsistente) {
-          return resolve({ ok: false, errore: "PDF non creato: Microsoft Word non ha risposto" + (err ? " (" + err.message + ")" : "") + " e LibreOffice non è installato. Installa Word o LibreOffice sul Mac per generare i PDF." });
+          // Se Word c'è ma non ha funzionato, quasi sempre è un problema di PERMESSI
+          // di macOS (automazione). Do istruzioni chiare invece del messaggio tecnico.
+          const errWord = err ? err.message : "";
+          const paionoPermessi = /not allowed|permission|authoriz|1743|-1743|osascript/i.test(errWord);
+          let messaggio;
+          if (paionoPermessi) {
+            messaggio = "PDF non creato: macOS ha bloccato il permesso di controllare Word.\n\n" +
+              "COME RISOLVERE (una volta sola):\n" +
+              "1. Apri Impostazioni di Sistema > Privacy e Sicurezza > Automazione\n" +
+              "2. Trova 'Gama Consuntivi' e attiva la spunta su 'Microsoft Word'\n" +
+              "3. Genera di nuovo il documento\n\n" +
+              "In alternativa, quando compare la richiesta 'Gama Consuntivi vuole controllare Word', premi OK/Consenti.";
+          } else {
+            messaggio = "PDF non creato: Microsoft Word non ha risposto" + (errWord ? " (" + errWord + ")" : "") + ".\n\n" +
+              "Prova a: aprire Word almeno una volta manualmente, poi rigenerare il documento. " +
+              "Se il problema resta, installa LibreOffice come alternativa.";
+          }
+          return resolve({ ok: false, errore: messaggio });
         }
         // Anche LibreOffice converte in locale, poi spostiamo
-        const libreCmd = `"${sofficeEsistente}" --headless --convert-to pdf --outdir "${app.getPath("temp")}" "${docxPath}"`;
+        const libreCmd = `"${sofficeEsistente}" --headless --convert-to pdf --outdir "${cartellaTempSicura()}" "${docxPath}"`;
         exec(libreCmd, { timeout: 90000 }, async (err2) => {
           if (err2) {
             return resolve({ ok: false, errore: "PDF non creato: né Word né LibreOffice hanno funzionato. " + err2.message });
           }
           const docxBase = path.basename(docxPath).replace(/\.docx$/i, "");
-          const generatoLocale = path.join(app.getPath("temp"), docxBase + ".pdf");
+          const generatoLocale = path.join(cartellaTempSicura(), docxBase + ".pdf");
           try {
             if (fs.existsSync(generatoLocale)) {
               await fsp.mkdir(path.dirname(pdfFinale), { recursive: true });
@@ -993,7 +1027,7 @@ end run
 
     // === WINDOWS: Word via PowerShell COM ===
     // Scrivo lo script su file .ps1 temporaneo per evitare problemi di encoding
-    const tmpPs1 = path.join(os.tmpdir(), "gama_conv_" + Date.now() + ".ps1");
+    const tmpPs1 = path.join(cartellaTempSicura(), "gama_conv_" + Date.now() + ".ps1");
 
     const psScript = `
 $ErrorActionPreference = 'Stop'
@@ -1144,7 +1178,7 @@ ipcMain.handle("salva-consuntivo", async (event, { tipo, meseYYYYMM, filename, a
     // (solo lettere/numeri). Questo evita che apostrofi o caratteri speciali nel
     // nome (es. "CONTABILITA'...") mandino in crisi PowerShell/Word su Windows,
     // che era la causa del PDF non generato per Dussmann e Preventivi.
-    const tmpDocxPath = path.join(os.tmpdir(), `gama_tmp_${Date.now()}.docx`);
+    const tmpDocxPath = path.join(cartellaTempSicura(), `gama_tmp_${Date.now()}.docx`);
     await fsp.writeFile(tmpDocxPath, buffer);
 
     // Converto in PDF tramite Word (input pulito → output col nome vero)
@@ -1326,7 +1360,7 @@ ipcMain.handle("salva-dussmann-personalizzato", async (event, { cartella, nomeFi
     await fsp.writeFile(docxPath, buffer);
 
     // Genero il PDF (uso un temp con nome pulito per evitare problemi di conversione)
-    const tmpDocxPath = path.join(os.tmpdir(), `gama_tmp_${Date.now()}.docx`);
+    const tmpDocxPath = path.join(cartellaTempSicura(), `gama_tmp_${Date.now()}.docx`);
     await fsp.writeFile(tmpDocxPath, buffer);
     const conv = await convertiDocxInPdf(tmpDocxPath, pdfPath);
     try { await fsp.unlink(tmpDocxPath); } catch (e) {}
@@ -1357,7 +1391,7 @@ ipcMain.handle("apri-pagina-aggiornamenti-mac", async () => {
 ipcMain.handle("salva-anteprima-pdf-desktop", async (event, { filename, arrayBuffer, isAnteprima = true }) => {
   try {
     const desktopDir = app.getPath("desktop");
-    const tmpDocx = path.join(app.getPath("temp"), "anteprima_tmp_" + Date.now() + ".docx");
+    const tmpDocx = path.join(cartellaTempSicura(), "anteprima_tmp_" + Date.now() + ".docx");
     // Nome PDF sul Desktop. Se anteprima → "ANTEPRIMA - [nome].pdf", altrimenti "[nome].pdf"
     let nomePulito = filename.replace(/\.docx$/i, "").replace(/^ANTEPRIMA\s*-\s*/i, "");
     // Sanifico il nome: rimuovo caratteri vietati, newline, e accorcio se troppo lungo
