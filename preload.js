@@ -22,8 +22,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // meseYYYYMM: "2026-05"
   // filename: nome del file (es. "CONSUNTIVO NR 304 BNL.docx")
   // arrayBuffer: dati binari del file
-  salvaConsuntivo: (tipo, meseYYYYMM, filename, arrayBuffer, gruppo) =>
-    ipcRenderer.invoke("salva-consuntivo", { tipo, meseYYYYMM, filename, arrayBuffer, gruppo }),
+  salvaConsuntivo: (tipo, meseYYYYMM, filename, arrayBuffer, gruppo, sottoCartella) =>
+    ipcRenderer.invoke("salva-consuntivo", { tipo, meseYYYYMM, filename, arrayBuffer, gruppo, sottoCartella }),
 
   // Salva l'ODL (PDF) abbinato a un consuntivo: NAS + Drive
   salvaOdl: (tipo, meseYYYYMM, consuntivoFilename, pdfArray, indice) =>
@@ -80,8 +80,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   salvaPreventivoAccettato: (filename, arrayBuffer) => ipcRenderer.invoke("salva-preventivo-accettato", { filename, arrayBuffer }),
 
   // ---- Eliminazione file fisici ----
-  eliminaFileConsuntivo: (tipo, meseYYYYMM, filenameDocx, gruppo) =>
-    ipcRenderer.invoke("elimina-file-consuntivo", { tipo, meseYYYYMM, filenameDocx, gruppo }),
+  eliminaFileConsuntivo: (tipo, meseYYYYMM, filenameDocx, gruppo, sottoCartella) =>
+    ipcRenderer.invoke("elimina-file-consuntivo", { tipo, meseYYYYMM, filenameDocx, gruppo, sottoCartella }),
 
   // ---- Auto-update: ricevo notifiche di stato aggiornamento ----
   onUpdateStatus: (callback) => {
@@ -96,6 +96,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Per debug / informazioni
   getVersione: () => ipcRenderer.invoke("get-versione"),
   getPlatform: () => ipcRenderer.invoke("get-platform"),
+  scegliCartellaLibera: (defaultPath) => ipcRenderer.invoke("scegli-cartella-libera", { defaultPath }),
+  salvaDussmannPersonalizzato: (cartella, nomeFile, arrayBuffer) =>
+    ipcRenderer.invoke("salva-dussmann-personalizzato", { cartella, nomeFile, arrayBuffer }),
+  getModalitaTest: () => ipcRenderer.invoke("get-modalita-test"),
   apriPaginaAggiornaMac: () => ipcRenderer.invoke("apri-pagina-aggiornamenti-mac"),
   salvaAnteprima: (filename, arrayBuffer, isAnteprima = true) => ipcRenderer.invoke("salva-anteprima-pdf-desktop", { filename, arrayBuffer, isAnteprima }),
 });

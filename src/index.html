@@ -64,16 +64,8 @@
           <div class="valore" id="prossimoNumeroPreventivoCard">—</div>
         </div>
         <div class="numero-card numero-dussmann">
-          <div class="label">DUSSMANN NHOOD</div>
+          <div class="label">DUSSMANN</div>
           <div class="valore" id="cardDussNhood">—</div>
-        </div>
-        <div class="numero-card numero-dussmann">
-          <div class="label">DUSSMANN EDILE</div>
-          <div class="valore" id="cardDussEdile">—</div>
-        </div>
-        <div class="numero-card numero-dussmann">
-          <div class="label">DUSSMANN IMPIANT.</div>
-          <div class="valore" id="cardDussImpiantistica">—</div>
         </div>
       </div>
       <div class="info-utente">
@@ -467,6 +459,8 @@ VIA VERROTTI 65015 MONTESILVANO (PE)</textarea>
               <label for="dussGruppo">Gruppo / Cartella *</label>
               <select id="dussGruppo" required>
                 <option value="NHOOD">NHOOD</option>
+                <option value="ENI / GI.L.C.">ENI / GI.L.C. IMPIANTI SRL</option>
+                <option value="RAI VIA MECENATE">RAI VIA MECENATE</option>
                 <option value="SQUADRA EDILE">SQUADRA EDILE \ FIBERCOP</option>
                 <option value="SQUADRA IMPIANTISTICA">SQUADRA IMPIANTISTICA \ FIBERCOP</option>
               </select>
@@ -509,6 +503,19 @@ P.IVA 00124140211</textarea>
             <div class="form-field">
               <label for="dussPeriodo">Periodo (testo nelle ore)</label>
               <input type="text" id="dussPeriodo" placeholder="es. MAGGIO o LAVORATIVE MAGGIO">
+            </div>
+          </div>
+          <div class="form-row" id="rigaOperaioEdile" style="display:none;">
+            <div class="form-field full-width">
+              <label for="dussOperaioEdile" id="labelOperaioMenu">Operaio (si inserisce nell'oggetto)</label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select id="dussOperaioEdile" style="flex:1;">
+                  <option value="NICOLA SCIARRA">NICOLA SCIARRA</option>
+                  <option value="EL MALKI AHMED">EL MALKI AHMED</option>
+                  <option value="__ALTRO__">Altro... (scrivi tu)</option>
+                </select>
+                <input type="text" id="dussOperaioEdileAltro" placeholder="Scrivi nome operaio" style="flex:1;display:none;">
+              </div>
             </div>
           </div>
           <div class="form-row">
@@ -575,7 +582,7 @@ P.IVA 00124140211</textarea>
           <div class="form-row">
             <div class="form-field">
               <label for="dussPagamenti">Pagamenti</label>
-              <input type="text" id="dussPagamenti" placeholder="es. BB 60GG DFFM">
+              <input type="text" id="dussPagamenti" value="BB 60GDFFM" placeholder="es. BB 60GG DFFM">
             </div>
           </div>
         </div>
@@ -853,29 +860,11 @@ P.IVA 00124140211</textarea>
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label for="forzaNumeroDussmannNhood">Prossimo numero DUSSMANN - NHOOD:</label>
+            <label for="forzaNumeroDussmannNhood">Prossimo numero DUSSMANN:</label>
             <input type="number" id="forzaNumeroDussmannNhood" min="1">
           </div>
           <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
-            <button id="btnForzaNumeroDussmannNhood" class="btn btn-warning">⚠️ Imposta NHOOD</button>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label for="forzaNumeroDussmannEdile">Prossimo numero DUSSMANN - SQUADRA EDILE:</label>
-            <input type="number" id="forzaNumeroDussmannEdile" min="1">
-          </div>
-          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
-            <button id="btnForzaNumeroDussmannEdile" class="btn btn-warning">⚠️ Imposta EDILE</button>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label for="forzaNumeroDussmannImpiantistica">Prossimo numero DUSSMANN - SQUADRA IMPIANTISTICA:</label>
-            <input type="number" id="forzaNumeroDussmannImpiantistica" min="1">
-          </div>
-          <div class="form-field" style="justify-content: flex-end; display: flex; align-items: flex-end;">
-            <button id="btnForzaNumeroDussmannImpiantistica" class="btn btn-warning">⚠️ Imposta IMPIANTISTICA</button>
+            <button id="btnForzaNumeroDussmannNhood" class="btn btn-warning">⚠️ Imposta DUSSMANN</button>
           </div>
         </div>
       </div>
@@ -898,7 +887,7 @@ P.IVA 00124140211</textarea>
 
       <div class="form-section">
         <h3>🏢 Cartella DUSSMANN</h3>
-        <p>I consuntivi DUSSMANN vengono salvati in una cartella SEPARATA (dentro creerà "DUSSMANN" divisa per mese e gruppo: NHOOD, Squadra Edile, Squadra Impiantistica).</p>
+        <p>I consuntivi DUSSMANN vengono salvati nella struttura "DUSSMANN GAMA / anno / mese / sottocartella" (ENI, NHOOD ORDINARIA + EXTRA, RAI VIA MECENATE, RIMBORSO, SQUADRA EDILE, SQUADRA IMPIANTISTICA). La numerazione è unica per tutti i gruppi.</p>
         <div class="form-row">
           <div class="form-field full-width">
             <label>Cartella DUSSMANN attuale</label>

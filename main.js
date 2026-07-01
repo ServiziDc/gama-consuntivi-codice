@@ -897,40 +897,76 @@ function convertiDocxInPdf(docxPath, pdfPath) {
     // === MAC ===
     if (process.platform === "darwin") {
       const { execFile } = require("child_process");
-      // AppleScript salvato su file per evitare problemi di escape con -e
+      // Word su Mac può avere problemi a salvare il PDF DIRETTAMENTE su un percorso
+      // di rete (NAS). Quindi genero prima in una cartella LOCALE temporanea, poi
+      // sposto il PDF nella destinazione finale.
+      const pdfFinale = pdfPath;
+      const pdfTmpLocale = path.join(app.getPath("temp"), "gama_pdf_" + Date.now() + ".pdf");
+
       const docxEscaped = docxPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-      const pdfEscaped  = pdfPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const pdfEscaped  = pdfTmpLocale.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      // Sintassi robusta: uso "save as active document" con file format PDF.
+      // Compatibile con Word per Mac 2016/2019/365.
       const script = `
 on run
-  set inFile to POSIX file "${docxEscaped}"
-  set outFile to POSIX file "${pdfEscaped}"
+  set inPOSIX to "${docxEscaped}"
+  set outPOSIX to "${pdfEscaped}"
   tell application "Microsoft Word"
-    open inFile
+    activate
+    open inPOSIX
     set theDoc to active document
-    save as theDoc file name (outFile as text) file format format PDF
+    save as theDoc file name outPOSIX file format format PDF
     close theDoc saving no
   end tell
 end run
 `.trim();
       const tmpScript = path.join(app.getPath("temp"), "conv_" + Date.now() + ".scpt");
       try { fs.writeFileSync(tmpScript, script, "utf8"); } catch(e) {}
+
+      // Funzione che sposta il PDF dal temp locale alla destinazione finale
+      const spostaPdfFinale = async () => {
+        try {
+          if (fs.existsSync(pdfTmpLocale)) {
+            await fsp.mkdir(path.dirname(pdfFinale), { recursive: true });
+            await fsp.copyFile(pdfTmpLocale, pdfFinale);
+            try { await fsp.unlink(pdfTmpLocale); } catch(e) {}
+            return fs.existsSync(pdfFinale);
+          }
+        } catch(e) {}
+        return false;
+      };
+
       execFile("osascript", [tmpScript], { timeout: 90000 }, async (err) => {
         try { fs.unlinkSync(tmpScript); } catch(e) {}
-        if (fs.existsSync(pdfPath)) return resolve({ ok: true });
-        // Fallback: LibreOffice
-        const outDir = path.dirname(pdfPath);
-        const libreCmd = `/Applications/LibreOffice.app/Contents/MacOS/soffice --headless --convert-to pdf --outdir "${outDir}" "${docxPath}"`;
-        exec(libreCmd, { timeout: 60000 }, async (err2) => {
+        // Word ha creato il PDF in locale? Lo sposto sul NAS/destinazione
+        if (await spostaPdfFinale()) return resolve({ ok: true });
+        if (fs.existsSync(pdfFinale)) return resolve({ ok: true });
+
+        // Fallback: LibreOffice (provo entrambi i percorsi comuni)
+        const outDir = path.dirname(pdfFinale);
+        const sofficePaths = [
+          "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+          "/Applications/OpenOffice.app/Contents/MacOS/soffice"
+        ];
+        const sofficeEsistente = sofficePaths.find(p => { try { return fs.existsSync(p); } catch(e) { return false; } });
+        if (!sofficeEsistente) {
+          return resolve({ ok: false, errore: "PDF non creato: Microsoft Word non ha risposto" + (err ? " (" + err.message + ")" : "") + " e LibreOffice non è installato. Installa Word o LibreOffice sul Mac per generare i PDF." });
+        }
+        // Anche LibreOffice converte in locale, poi spostiamo
+        const libreCmd = `"${sofficeEsistente}" --headless --convert-to pdf --outdir "${app.getPath("temp")}" "${docxPath}"`;
+        exec(libreCmd, { timeout: 90000 }, async (err2) => {
           if (err2) {
-            return resolve({ ok: false, errore: "Word non disponibile e LibreOffice non trovato. Installa Microsoft Word o LibreOffice per generare PDF sul Mac." });
+            return resolve({ ok: false, errore: "PDF non creato: né Word né LibreOffice hanno funzionato. " + err2.message });
           }
           const docxBase = path.basename(docxPath).replace(/\.docx$/i, "");
-          const generato = path.join(outDir, docxBase + ".pdf");
+          const generatoLocale = path.join(app.getPath("temp"), docxBase + ".pdf");
           try {
-            if (generato !== pdfPath && fs.existsSync(generato)) {
-              await fsp.rename(generato, pdfPath);
+            if (fs.existsSync(generatoLocale)) {
+              await fsp.mkdir(path.dirname(pdfFinale), { recursive: true });
+              await fsp.copyFile(generatoLocale, pdfFinale);
+              try { await fsp.unlink(generatoLocale); } catch(e) {}
             }
-            resolve({ ok: fs.existsSync(pdfPath) });
+            resolve({ ok: fs.existsSync(pdfFinale) });
           } catch(e) {
             resolve({ ok: false, errore: e.message });
           }
@@ -962,34 +998,55 @@ end run
     const psScript = `
 $ErrorActionPreference = 'Stop'
 $word = $null
+$doc = $null
 try {
   $word = New-Object -ComObject Word.Application
   $word.Visible = $false
   $word.DisplayAlerts = 0
-  $doc = $word.Documents.Open('${docxPath.replace(/'/g, "''")}', $false, $true)
+  # Apro il documento NON in sola lettura (alcune versioni di Word falliscono
+  # il SaveAs in PDF se il documento è aperto read-only). AddToRecentFiles=false.
+  $doc = $word.Documents.Open('${docxPath.replace(/'/g, "''")}', $false, $false)
+  # wdFormatPDF = 17
   $doc.SaveAs([ref]'${pdfPath.replace(/'/g, "''")}', [ref]17)
   $doc.Close($false)
+  $doc = $null
   Write-Output 'OK'
 } catch {
   Write-Output ('ERRORE: ' + $_.Exception.Message)
 } finally {
+  if ($doc -ne $null) {
+    try { $doc.Close($false) } catch {}
+  }
   if ($word -ne $null) {
     try { $word.Quit() } catch {}
     try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null } catch {}
   }
+  [System.GC]::Collect()
+  [System.GC]::WaitForPendingFinalizers()
 }`.trim();
 
     try { fs.writeFileSync(tmpPs1, psScript, "utf8"); } catch(e) {}
 
     exec(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tmpPs1}"`,
-      { timeout: 60000, windowsHide: true },
+      { timeout: 90000, windowsHide: true },
       (err, stdout, stderr) => {
         try { fs.unlinkSync(tmpPs1); } catch(e) {}
         const output = (stdout || "").trim();
         if (fs.existsSync(pdfPath)) return resolve({ ok: true });
-        if (err) return resolve({ ok: false, errore: "Word errore: " + err.message });
-        if (output.startsWith("ERRORE")) return resolve({ ok: false, errore: output });
-        resolve({ ok: false, errore: "Conversione fallita: " + (output || stderr || "output vuoto") });
+        // Diagnostica dettagliata per capire perché è fallito
+        let motivo;
+        if (output.startsWith("ERRORE")) {
+          motivo = output;
+        } else if (err) {
+          if (/Word\.Application|80040154|Cannot find|New-Object/i.test(err.message)) {
+            motivo = "Microsoft Word non risulta installato su questo PC (serve per generare i PDF su Windows). Errore: " + err.message;
+          } else {
+            motivo = "Word errore: " + err.message;
+          }
+        } else {
+          motivo = "Conversione fallita: " + (output || stderr || "output vuoto");
+        }
+        resolve({ ok: false, errore: motivo });
       }
     );
   });
@@ -1000,7 +1057,7 @@ try {
 // - Il .docx viene salvato sul NAS (in CONSULTIVI GAMA/mese/CBRE o CREVAL/)
 // - Il .pdf viene generato e salvato DIRETTAMENTE sul DESKTOP locale (solo CBRE/CREVAL; i DUSSMANN col Word)
 // - Il docx temporaneo usato per la conversione PDF viene cancellato
-ipcMain.handle("salva-consuntivo", async (event, { tipo, meseYYYYMM, filename, arrayBuffer, gruppo }) => {
+ipcMain.handle("salva-consuntivo", async (event, { tipo, meseYYYYMM, filename, arrayBuffer, gruppo, sottoCartella }) => {
   const s = leggiImpostazioni();
   if (!s.cartellaRoot) {
     return { ok: false, errore: "Cartella root non impostata" };
@@ -1009,23 +1066,41 @@ ipcMain.handle("salva-consuntivo", async (event, { tipo, meseYYYYMM, filename, a
   try {
     const meseFolder = nomeCartellaMese(meseYYYYMM);
     const tipoFolder = tipo.toUpperCase();
-    const safeFilename = filename.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
+    // Sanifico il nome: rimuovo i caratteri vietati di Windows PIÙ apostrofi e
+    // accenti che possono far fallire SaveAs di Word/PowerShell. I punti interni
+    // (es. "S.R.L.") vengono ridotti per sicurezza nel SaveAs del PDF.
+    const safeFilename = filename
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")   // vietati Windows
+      .replace(/['`´]/g, "")                       // apostrofi/accenti → tolti
+      .replace(/\s+/g, " ")                        // spazi multipli → singolo
+      .trim();
     const buffer = Buffer.from(arrayBuffer);
 
     // STRUTTURA CARTELLE:
     // - CBRE/CREVAL/altri: <root> > MESE > TIPO
-    // - DUSSMANN:
-    //     se è impostata una cartella DUSSMANN dedicata: <cartellaDussmann> > MESE > GRUPPO
-    //     altrimenti (ripiego): <root> > DUSSMANN > MESE > GRUPPO
+    // - DUSSMANN (legacy): <root> > DUSSMANN > MESE > GRUPPO
+    // - ENI (legacy): <root> > ENI > MESE > GRUPPO
+    // - DUSSMANN GAMA (nuovo standard):
+    //     <root> > DUSSMANN GAMA > AAAA > MM_MESE_AAAA > SOTTOCARTELLA
+    //     dove SOTTOCARTELLA è una delle 6 fisse (ENI, NHOOD ORDINARIA + EXTRA,
+    //     RAI VIA MECENATE, RIMBORSO, SQUADRA EDILE, SQUADRA IMPIANTISTICA),
+    //     già calcolata dal renderer e passata in "sottoCartella".
     const gruppoSafe = gruppo ? gruppo.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") : null;
+    const sottoSafe = sottoCartella ? sottoCartella.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") : null;
+    // Anno: lo ricavo dal mese YYYY-MM (es. "2026-06" → "2026")
+    const annoFolder = (meseYYYYMM && /^\d{4}-\d{2}/.test(meseYYYYMM)) ? meseYYYYMM.slice(0, 4) : String(new Date().getFullYear());
     const usaCartellaDussDedicata = (tipo === "dussmann" && gruppoSafe && s.cartellaDussmann);
+    const eDussmannGama = (tipo === "dussmann_gama");
 
     function buildSubPath(base) {
+      if (tipo === "dussmann_gama" && sottoSafe) {
+        // Nuova struttura standard: DUSSMANN GAMA / AAAA / MM_MESE_AAAA / SOTTOCARTELLA
+        return path.join(base, "DUSSMANN GAMA", annoFolder, meseFolder, sottoSafe);
+      }
+      if (tipo === "eni" && gruppoSafe) {
+        return path.join(base, "ENI", meseFolder, gruppoSafe);
+      }
       if (tipo === "dussmann" && gruppoSafe) {
-        if (s.cartellaDussmann && base === s.cartellaRoot) {
-          // gestito sotto con rootDaUsare specifico
-          return path.join(base, "DUSSMANN", meseFolder, gruppoSafe);
-        }
         return path.join(base, "DUSSMANN", meseFolder, gruppoSafe);
       }
       return path.join(base, meseFolder, tipoFolder);
@@ -1055,7 +1130,7 @@ ipcMain.handle("salva-consuntivo", async (event, { tipo, meseYYYYMM, filename, a
     // nessuna cartella (solo il file .pdf).
     const desktopDir = app.getPath("desktop");
     let pdfDir;
-    if (usaCartellaDussDedicata) {
+    if (usaCartellaDussDedicata || tipo === "eni" || tipo === "dussmann" || tipo === "dussmann_gama") {
       pdfDir = nasDir; // stessa cartella del docx (Word + PDF insieme)
     } else {
       pdfDir = desktopDir; // CBRE/CREVAL: PDF direttamente sul Desktop, senza cartelle
@@ -1065,11 +1140,14 @@ ipcMain.handle("salva-consuntivo", async (event, { tipo, meseYYYYMM, filename, a
     const pdfFilename = safeFilename.replace(/\.docx$/i, "") + ".pdf";
     const pdfPath = path.join(pdfDir, pdfFilename);
 
-    // Per la conversione uso un docx temporaneo nella cartella temp di sistema
-    const tmpDocxPath = path.join(os.tmpdir(), `gama_tmp_${Date.now()}_${safeFilename}`);
+    // Per la conversione uso un docx temporaneo con nome SEMPLICE e PULITO
+    // (solo lettere/numeri). Questo evita che apostrofi o caratteri speciali nel
+    // nome (es. "CONTABILITA'...") mandino in crisi PowerShell/Word su Windows,
+    // che era la causa del PDF non generato per Dussmann e Preventivi.
+    const tmpDocxPath = path.join(os.tmpdir(), `gama_tmp_${Date.now()}.docx`);
     await fsp.writeFile(tmpDocxPath, buffer);
 
-    // Converto in PDF tramite Word
+    // Converto in PDF tramite Word (input pulito → output col nome vero)
     const conv = await convertiDocxInPdf(tmpDocxPath, pdfPath);
 
     // Cancello il docx TEMPORANEO (NON quello sul NAS!)
@@ -1210,6 +1288,66 @@ ipcMain.handle("reset-cartella", async () => {
 ipcMain.handle("get-versione", async () => ({ versione: app.getVersion() }));
 
 ipcMain.handle("get-platform", async () => process.platform);
+
+// Apre il dialog di Windows/Mac per scegliere una cartella qualsiasi.
+// Usato dalla finestra "Salva con nome" dei DUSSMANN.
+ipcMain.handle("scegli-cartella-libera", async (event, { defaultPath } = {}) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Scegli la cartella dove salvare il documento",
+    properties: ["openDirectory", "createDirectory"],
+    defaultPath: defaultPath || app.getPath("documents")
+  });
+  if (result.canceled || !result.filePaths.length) {
+    return { ok: false, canceled: true };
+  }
+  return { ok: true, cartella: result.filePaths[0] };
+});
+
+// Salva un DUSSMANN con nome e cartella scelti dall'utente: scrive il Word e
+// genera il PDF, entrambi col nome indicato, nella cartella indicata.
+ipcMain.handle("salva-dussmann-personalizzato", async (event, { cartella, nomeFile, arrayBuffer }) => {
+  try {
+    if (!cartella || !nomeFile) {
+      return { ok: false, errore: "Cartella o nome file mancante" };
+    }
+    // Pulisco il nome file: tolgo estensione se l'utente l'ha messa, e i caratteri vietati
+    let base = String(nomeFile).trim().replace(/\.docx$/i, "").replace(/\.pdf$/i, "");
+    base = base.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/['`´]/g, "").replace(/\s+/g, " ").trim();
+    if (!base) base = "CONSUNTIVO DUSSMANN";
+
+    // Creo la cartella se non esiste
+    await fsp.mkdir(cartella, { recursive: true });
+
+    const buffer = Buffer.from(arrayBuffer);
+    const docxPath = path.join(cartella, base + ".docx");
+    const pdfPath = path.join(cartella, base + ".pdf");
+
+    // Salvo il Word
+    await fsp.writeFile(docxPath, buffer);
+
+    // Genero il PDF (uso un temp con nome pulito per evitare problemi di conversione)
+    const tmpDocxPath = path.join(os.tmpdir(), `gama_tmp_${Date.now()}.docx`);
+    await fsp.writeFile(tmpDocxPath, buffer);
+    const conv = await convertiDocxInPdf(tmpDocxPath, pdfPath);
+    try { await fsp.unlink(tmpDocxPath); } catch (e) {}
+
+    return {
+      ok: true,
+      docxPath,
+      pdfPath: conv.ok ? pdfPath : null,
+      pdfErrore: conv.ok ? null : (conv.errore || "PDF non creato")
+    };
+  } catch (err) {
+    return { ok: false, errore: err.message };
+  }
+});
+
+// Modalità TEST: attiva se il programma è stato lanciato con la variabile
+// d'ambiente GAMA_TEST=1 (dal file TEST-GAMA.bat). In questa modalità l'app
+// NON scrive nulla su Firebase (contatori, consuntivi, colori restano intatti).
+ipcMain.handle("get-modalita-test", async () => {
+  return { test: process.env.GAMA_TEST === "1" };
+});
 
 ipcMain.handle("apri-pagina-aggiornamenti-mac", async () => {
   shell.openExternal("https://github.com/ServiziDc/gama-consuntivi-releases/releases/latest");
@@ -1391,7 +1529,7 @@ ipcMain.handle("salva-excel-mese", async (event, { meseYYYYMM, filename, arrayBu
 });
 
 // Elimina i file fisici di un consuntivo: .docx dal NAS + PDF dal Desktop
-ipcMain.handle("elimina-file-consuntivo", async (event, { tipo, meseYYYYMM, filenameDocx, gruppo }) => {
+ipcMain.handle("elimina-file-consuntivo", async (event, { tipo, meseYYYYMM, filenameDocx, gruppo, sottoCartella }) => {
   const s = leggiImpostazioni();
   const risultato = { ok: true, docxEliminato: false, pdfEliminato: false, trovatoQualcosa: false };
 
@@ -1400,6 +1538,8 @@ ipcMain.handle("elimina-file-consuntivo", async (event, { tipo, meseYYYYMM, file
   const tipoFolder = tipo.toUpperCase();
   const meseFolder = nomeCartellaMese(meseYYYYMM);
   const gruppoSafe = gruppo ? gruppo.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") : null;
+  const sottoSafe = sottoCartella ? sottoCartella.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") : null;
+  const annoFolder = (meseYYYYMM && /^\d{4}-\d{2}/.test(meseYYYYMM)) ? meseYYYYMM.slice(0, 4) : String(new Date().getFullYear());
 
   // Helper: prova a cancellare un file e segna i flag
   async function prova(p, tipoFile) {
@@ -1421,7 +1561,29 @@ ipcMain.handle("elimina-file-consuntivo", async (event, { tipo, meseYYYYMM, file
   const desktopDir = app.getPath("desktop");
   const pdfRootName = s.cartellaPdfNome || "PDF CONSUNTIVI";
 
-  if (tipo === "dussmann" && gruppoSafe) {
+  if (tipo === "dussmann_gama" && sottoSafe) {
+    // NUOVA STRUTTURA: DUSSMANN GAMA / AAAA / MESE / SOTTOCARTELLA (Word + PDF insieme)
+    const basi = [];
+    if (s.cartellaRoot) basi.push(s.cartellaRoot);
+    basi.push(cartellaOffline());
+    for (const base of basi) {
+      candidatiDocx.push(path.join(base, "DUSSMANN GAMA", annoFolder, meseFolder, sottoSafe, safeFilename));
+      candidatiPdf.push(path.join(base, "DUSSMANN GAMA", annoFolder, meseFolder, sottoSafe, pdfFilename));
+    }
+    // Tengo anche i VECCHI percorsi per cancellare file di versioni precedenti
+    if (gruppoSafe) {
+      const vecchieBasi = [];
+      if (s.cartellaDussmann) vecchieBasi.push(s.cartellaDussmann);
+      if (s.cartellaRoot) {
+        vecchieBasi.push(path.join(s.cartellaRoot, "DUSSMANN"));
+        vecchieBasi.push(path.join(s.cartellaRoot, "ENI"));
+      }
+      for (const base of vecchieBasi) {
+        candidatiDocx.push(path.join(base, meseFolder, gruppoSafe, safeFilename));
+        candidatiPdf.push(path.join(base, meseFolder, gruppoSafe, pdfFilename));
+      }
+    }
+  } else if (tipo === "dussmann" && gruppoSafe) {
     // DUSSMANN: Word e PDF insieme nella cartella DUSSMANN (dedicata o ripiego)
     const basi = [];
     if (s.cartellaDussmann) basi.push(s.cartellaDussmann);

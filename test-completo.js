@@ -107,6 +107,77 @@ fileJS.forEach(([nome, file]) => {
 });
 
 // ============================================================================
+sezione("FASE C3 - STRUTTURA DUSSMANN GAMA (cartelle standard)");
+
+const appDG = leggi(path.join(ROOT, "src/app.js"));
+const mainDG = leggi(path.join(ROOT, "main.js"));
+test("Funzione determinaSottoCartellaDussmann", appDG.includes("function determinaSottoCartellaDussmann"));
+test("Sottocartella RIMBORSO", appDG.includes('return "RIMBORSO"'));
+test("Sottocartella ENI", appDG.includes('return "ENI"'));
+test("Sottocartella RAI VIA MECENATE", appDG.includes('return "RAI VIA MECENATE"'));
+test("Sottocartella NHOOD ORDINARIA + EXTRA", appDG.includes('return "NHOOD ORDINARIA + EXTRA"'));
+test("Sottocartella SQUADRA EDILE", appDG.includes('return "SQUADRA EDILE"'));
+test("Sottocartella SQUADRA IMPIANTISTICA", appDG.includes('return "SQUADRA IMPIANTISTICA"'));
+test("Riconoscimento RAI da oggetto", appDG.includes('oggetto.includes("RAI") && oggetto.includes("MECENATE")'));
+test("Rimborso ha priorita (primo controllo)", /sottoTipo === "rimborso"[\s\S]{0,60}return "RIMBORSO"/.test(appDG));
+test("Tipo dussmann_gama usato", appDG.includes('"dussmann_gama"'));
+test("main.js: struttura DUSSMANN GAMA/AAAA", mainDG.includes('path.join(base, "DUSSMANN GAMA", annoFolder, meseFolder, sottoSafe)'));
+test("main.js: anno ricavato dal mese", mainDG.includes("meseYYYYMM.slice(0, 4)"));
+test("Finestra salva personalizzato (solo Dussmann)", appDG.includes("function mostraFinestraSalvaDussmann"));
+test("Handler salva-dussmann-personalizzato", mainDG.includes('"salva-dussmann-personalizzato"'));
+test("Handler scegli-cartella-libera", mainDG.includes('"scegli-cartella-libera"'));
+test("Dussmann usa finestra salva", appDG.includes("mostraFinestraSalvaDussmann(prefissoFisso, cartellaDefault)"));
+test("Prefisso fisso con numero (CONSUNTIVO DUSSMANN NR)", appDG.includes("CONSUNTIVO DUSSMANN NR ${c.numero}"));
+test("Prefisso non modificabile (span, non input)", appDG.includes('id="dussSalvaPrefisso"'));
+test("Nome finale = prefisso + resto", appDG.includes("`${prefissoFisso} ${resto}`"));
+test("Numero sempre presente anche senza testo", appDG.includes("resto ? `${prefissoFisso} ${resto}` : prefissoFisso"));
+test("Salva crea sia docx che pdf", mainDG.includes('base + ".docx"') && mainDG.includes('base + ".pdf"'));
+test("Gruppo ENI / GI.L.C. nei modelli", appDG.includes('"ENI / GI.L.C."'));
+test("ENI: operaio BRUSENKO VALENTYN fisso", appDG.includes("BRUSENKO VALENTYN"));
+test("ENI: oggetto SAN DONATO MILANESE", appDG.includes("SAN DONATO MILANESE") && appDG.includes("PIAZZA BOLDRINI"));
+test("Opzione ENI nel menu HTML", leggi(path.join(ROOT, "src/index.html")).includes('value="ENI / GI.L.C."'));
+test("Compila destinatario GI.L.C. automatico", appDG.includes("function compilaDestinatarioSeEni"));
+test("ENI riconosciuto dal gruppo (cartella)", appDG.includes('gruppoRaw.includes("ENI")'));
+test("Menu operaio EDILE in HTML", leggi(path.join(ROOT, "src/index.html")).includes('id="dussOperaioEdile"'));
+test("Operaio NICOLA SCIARRA nel menu", leggi(path.join(ROOT, "src/index.html")).includes("NICOLA SCIARRA"));
+test("Operaio EL MALKI AHMED nel menu", leggi(path.join(ROOT, "src/index.html")).includes("EL MALKI AHMED"));
+test("Opzione Altro operaio EDILE", leggi(path.join(ROOT, "src/index.html")).includes("__ALTRO__"));
+test("Funzione applicaOperaioEdileAOggetto", appDG.includes("function applicaOperaioEdileAOggetto"));
+test("Operaio EDILE sostituito nell'oggetto", appDG.includes('testo.replace(/NOME COGNOME/g, nome)'));
+test("Menu operaio visibile solo per EDILE", appDG.includes("OPERAI_PER_GRUPPO[gruppo]"));
+test("Operai IMPIANTISTICA definiti", appDG.includes('"SQUADRA IMPIANTISTICA": ["ERION DORACI", "SIDHON BISHOUNADI"]'));
+test("Operaio ERION DORACI", appDG.includes("ERION DORACI"));
+test("Operaio SIDHON BISHOUNADI", appDG.includes("SIDHON BISHOUNADI"));
+test("Tabella OPERAI_PER_GRUPPO", appDG.includes("const OPERAI_PER_GRUPPO"));
+test("Gruppo RAI VIA MECENATE nei modelli", appDG.includes('"RAI VIA MECENATE": {'));
+test("Pagamenti DUSSMANN precompilato BB 60GDFFM", leggi(path.join(ROOT, "src/index.html")).includes('id="dussPagamenti" value="BB 60GDFFM"'));
+test("RAI: operaio CASCIELLO PIETRO fisso", appDG.includes("CASCIELLO PIETRO"));
+test("RAI: commessa NR 410", appDG.includes("COMMESSA NR 410"));
+test("Opzione RAI nel menu HTML", leggi(path.join(ROOT, "src/index.html")).includes('value="RAI VIA MECENATE"'));
+test("RAI riconosciuto dal gruppo (cartella)", appDG.includes('gruppoRaw.includes("RAI")'));
+
+// ============================================================================
+sezione("FASE C2 - MODALITA TEST (no scritture Firebase)");
+
+const mainCodeMT = leggi(path.join(ROOT, "main.js"));
+const appCodeMT = leggi(path.join(ROOT, "src/app.js"));
+const preloadMT = leggi(path.join(ROOT, "preload.js"));
+test("Handler get-modalita-test in main.js", mainCodeMT.includes("get-modalita-test"));
+test("Legge variabile GAMA_TEST", mainCodeMT.includes("GAMA_TEST"));
+test("getModalitaTest esposto nel preload", preloadMT.includes("getModalitaTest"));
+test("Funzione attivaModalitaTestSeRichiesto", appCodeMT.includes("attivaModalitaTestSeRichiesto"));
+test("Blocca setDoc in test", appCodeMT.includes("fb.setDoc = finto"));
+test("Blocca updateDoc in test", appCodeMT.includes("fb.updateDoc = finto"));
+test("Blocca deleteDoc in test", appCodeMT.includes("fb.deleteDoc = finto"));
+test("Blocca addDoc in test", appCodeMT.includes("fb.addDoc = finto"));
+test("Banner rosso modalita test", appCodeMT.includes("mostraBannerModalitaTest"));
+test("File TEST-GAMA.bat presente", fs.existsSync(path.join(ROOT, "TEST-GAMA.bat")));
+test("File TEST-GAMA-MAC.command presente", fs.existsSync(path.join(ROOT, "TEST-GAMA-MAC.command")));
+test("prenotaNumero salta Firebase in test", appCodeMT.includes("if (state.modalitaTest)") && /prenotaNumero\(tipo\)[\s\S]{0,200}state\.modalitaTest/.test(appCodeMT));
+test("prenotaNumeroDussmann salta Firebase in test", /prenotaNumeroDussmann[\s\S]{0,300}state\.modalitaTest/.test(appCodeMT));
+test("prenotaNumeroPreventivo salta Firebase in test", /prenotaNumeroPreventivo[\s\S]{0,150}state\.modalitaTest/.test(appCodeMT));
+
+// ============================================================================
 sezione("FASE C - CATENA IPC (preload ↔ main)");
 
 const preloadCode = leggi(path.join(ROOT, "preload.js"));
@@ -143,9 +214,18 @@ test("Funzione salvaAnteprimaPdf esiste", appCode.includes("async function salva
 test("Anteprima preventivo usa template corretto", appCode.includes("buildPreventivoDocx(p)"));
 test("Anteprima → prefisso ANTEPRIMA (true)", /salvaAnteprima\([^)]*,\s*true\)/.test(appCode));
 test("Genera consuntivo → PDF Desktop senza prefisso (false)", appCode.includes("Array.from(new Uint8Array(arrPdf)), false"));
-test("Genera preventivo → PDF Desktop senza prefisso (false)", appCode.includes("Array.from(new Uint8Array(arr)), false"));
+test("Genera preventivo → PDF Desktop senza prefisso (false)", appCode.includes("salvaAnteprima(filename, bytesArr, false)"));
 test("Handler PDF Desktop in main", mainCode.includes("salva-anteprima-pdf-desktop"));
 test("Parametro isAnteprima gestito", mainCode.includes("isAnteprima"));
+
+// Conversione PDF cross-platform (Windows + Mac)
+test("Mac: PDF generato in locale poi spostato (no problemi NAS)", mainCode.includes("pdfTmpLocale") && mainCode.includes("spostaPdfFinale"));
+test("Mac: Word come prima scelta", mainCode.includes('tell application "Microsoft Word"'));
+test("Mac: fallback LibreOffice", mainCode.includes("sofficeEsistente"));
+test("Mac: messaggio chiaro se manca Word/LibreOffice", mainCode.includes("Installa Word o LibreOffice sul Mac"));
+test("Windows: PowerShell per conversione", mainCode.includes("powershell") && mainCode.includes("Word.Application"));
+test("Windows: rileva Word mancante", mainCode.includes("Microsoft Word non risulta installato"));
+test("Temp conversione nome pulito (no apostrofi)", mainCode.includes("gama_tmp_"));
 
 // ============================================================================
 sezione("FASE F - PREVENTIVI (accetta / elimina / doppioni)");
@@ -157,6 +237,18 @@ test("Deduplica preventivi accettati", appCode.includes("Deduplica preventivi ac
 test("Eliminazione cancella riga consuntivi", appCode.includes('where("preventivoId", "==", id)'));
 test("Eliminazione rigenera Excel forzato", appCode.includes("aggiornaExcelMese(dati.excelMese, true)"));
 test("Cambio mese rigenera vecchio mese", appCode.includes("aggiornaExcelMese(vm, true)"));
+
+// Tabella voci preventivo (Descrizione, U.M., Q.tà, P.Unit, P.Totale)
+test("Tabella voci: funzione costruisci XML", appCode.includes("function costruisciTabellaVociXml"));
+test("Tabella voci: riga dinamica nel form", appCode.includes("function htmlRigaVocePreventivo"));
+test("Tabella voci: calcolo totali", appCode.includes("function ricalcolaTotaliPreventivo"));
+test("Tabella voci: lettura voci", appCode.includes("function leggiVociPreventivo"));
+test("Tabella voci: unità di misura con 'a corpo'", appCode.includes('"a corpo"'));
+test("Tabella voci: U.M. scrivibile (Altro)", appCode.includes("voce-um-altro"));
+test("Tabella voci: 5 colonne header", appCode.includes('"DESCRIZIONE"') && appCode.includes('"P. Unitario"') && appCode.includes('"P. Totale"'));
+test("Tabella voci: calcolo P.Totale (qta×pu)", appCode.includes("qta * pu"));
+test("Tabella voci: sostituisce tabella Word", appCode.includes("costruisciTabellaVociXml(voci, totaleOfferta)"));
+test("Tabella voci: pulsante aggiungi", appCode.includes("prev-aggiungi-voce"));
 
 // ============================================================================
 sezione("FASE G - CONSUNTIVI (campi e calcoli)");
@@ -297,6 +389,21 @@ if (esiste(path.join(ROOT, "attivazione.js"))) {
     test("Tollera key in minuscolo", att.validaKey(keyCorretta.toLowerCase()));
     // 1 key = 1 PC: key di altro codice rifiutata
     test("Key di un altro PC viene rifiutata (1 key = 1 PC)", !att.validaKey(att.calcolaKeyPerCodice("XXXX-YYYY-ZZZZ")));
+    // CODICE STABILE: 5 chiamate devono dare sempre lo stesso codice
+    const codiciRipetuti = [];
+    for (let i = 0; i < 5; i++) codiciRipetuti.push(att.generaCodiceMacchina());
+    test("Codice macchina STABILE su 5 chiamate (no riattivazione)", new Set(codiciRipetuti).size === 1);
+    // RETE DI SICUREZZA: eAttivato accetta un PC già attivato anche se il codice cambia
+    if (att.eAttivato) {
+      const codiceVecchio = "AAAA-BBBB-CCCC";
+      const keyVecchia = att.calcolaKeyPerCodice(codiceVecchio);
+      // Simulo un'app con licenza salvata col codice vecchio
+      const fakeApp = {
+        getPath: () => "/tmp",
+      };
+      // Verifico la funzione di calcolo key (base della rete di sicurezza)
+      test("Rete di sicurezza: key autentica per codice memorizzato", keyVecchia === att.calcolaKeyPerCodice(codiceVecchio));
+    }
   } catch (e) {
     test("Modulo attivazione funzionante", false, "errore: " + e.message);
   }

@@ -30,37 +30,69 @@ const SEGRETO = 'GamaService2026-Kx9#mPv2Lq7@nB4tWz!';
 // - bridge, bluetooth: ponti e bluetooth
 const INTERFACCE_DA_IGNORARE = /^(awdl|llw|utun|ipsec|ppp|vethernet|vmnet|vboxnet|docker|bridge|bluetooth|tun|tap|zt)/i;
 
-function generaCodiceMacchina() {
-  const interfacce = os.networkInterfaces();
-  const macValidi = [];
+// Legge un identificatore hardware STABILE e permanente del computer.
+// - Windows: MachineGuid dal registro di sistema (non cambia mai, è legato
+//   all'installazione di Windows)
+// - Mac: IOPlatformUUID (UUID hardware della scheda madre, permanente)
+// - Linux: machine-id
+// Questo ID NON dipende da quali schede di rete sono attive, quindi il codice
+// macchina resta identico anche se cambi cavo/Wi-Fi/adattatori.
+function leggiIdHardwareStabile() {
+  try {
+    const { execSync } = require('child_process');
+    if (os.platform() === 'win32') {
+      // MachineGuid dal registro di Windows
+      const out = execSync('reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid', { timeout: 5000, windowsHide: true }).toString();
+      const m = out.match(/MachineGuid\s+REG_SZ\s+([A-Za-z0-9\-]+)/);
+      if (m && m[1]) return 'win-' + m[1].trim();
+    } else if (os.platform() === 'darwin') {
+      // IOPlatformUUID dell'hardware Mac
+      const out = execSync('ioreg -rd1 -c IOPlatformExpertDevice', { timeout: 5000 }).toString();
+      const m = out.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/);
+      if (m && m[1]) return 'mac-' + m[1].trim();
+    } else {
+      // Linux: machine-id
+      try {
+        const id = fs.readFileSync('/etc/machine-id', 'utf8').trim();
+        if (id) return 'lin-' + id;
+      } catch (e) {}
+      try {
+        const id = fs.readFileSync('/var/lib/dbus/machine-id', 'utf8').trim();
+        if (id) return 'lin-' + id;
+      } catch (e) {}
+    }
+  } catch (e) {
+    console.warn('ID hardware stabile non disponibile, uso fallback MAC:', e.message);
+  }
+  return null; // se fallisce, useremo il fallback basato su MAC
+}
 
-  // Raccolgo TUTTI i MAC delle schede fisiche (non virtuali, non randomizzate)
-  for (const nome of Object.keys(interfacce)) {
-    // Salto le interfacce virtuali/randomizzate
-    if (INTERFACCE_DA_IGNORARE.test(nome)) continue;
-    for (const dettaglio of interfacce[nome]) {
-      if (!dettaglio.internal && dettaglio.mac && dettaglio.mac !== '00:00:00:00:00:00') {
-        macValidi.push(dettaglio.mac.toLowerCase());
+function generaCodiceMacchina() {
+  // PRIMA SCELTA: uso l'ID hardware stabile (registro Windows / UUID Mac).
+  // Questo è permanente e non cambia mai sullo stesso PC.
+  const idStabile = leggiIdHardwareStabile();
+
+  let datiMacchina;
+  if (idStabile) {
+    // Codice basato sull'ID hardware permanente + hostname (per leggibilità)
+    datiMacchina = [idStabile, os.platform(), os.arch()].join('|');
+  } else {
+    // FALLBACK (raro): se non riesco a leggere l'ID hardware, torno al vecchio
+    // metodo basato sui MAC delle schede fisiche.
+    const interfacce = os.networkInterfaces();
+    const macValidi = [];
+    for (const nome of Object.keys(interfacce)) {
+      if (INTERFACCE_DA_IGNORARE.test(nome)) continue;
+      for (const dettaglio of interfacce[nome]) {
+        if (!dettaglio.internal && dettaglio.mac && dettaglio.mac !== '00:00:00:00:00:00') {
+          macValidi.push(dettaglio.mac.toLowerCase());
+        }
       }
     }
+    const macUnici = [...new Set(macValidi)].sort();
+    const macFinale = macUnici.length > 0 ? macUnici.join(',') : 'no-mac';
+    datiMacchina = [macFinale, os.hostname(), os.platform(), os.arch()].join('|');
   }
-
-  // ORDINO i MAC e tolgo i duplicati: così l'ordine in cui il sistema elenca
-  // le interfacce NON conta (su Mac e Windows può variare). Il codice resta
-  // identico sullo stesso PC anche se cambia l'ordine delle schede.
-  const macUnici = [...new Set(macValidi)].sort();
-
-  // Se non trovo nessun MAC fisico (raro), uso un fallback basato solo su
-  // hostname+sistema (meno unico ma evita di bloccare il programma)
-  const macFinale = macUnici.length > 0 ? macUnici.join(',') : 'no-mac';
-
-  // Combino i dati hardware/sistema
-  const datiMacchina = [
-    macFinale,
-    os.hostname(),
-    os.platform(),
-    os.arch()
-  ].join('|');
 
   // Hash per ottenere un codice compatto e leggibile (12 caratteri)
   const hash = crypto.createHash('sha256').update(datiMacchina).digest('hex');
@@ -151,8 +183,30 @@ function leggiLicenza(app) {
 function eAttivato(app) {
   const licenza = leggiLicenza(app);
   if (!licenza || !licenza.key) return false;
-  // Rivalido la key contro il codice macchina ATTUALE (anti-copia del file)
-  return validaKey(licenza.key);
+
+  // 1. Caso normale: la key è valida per il codice macchina ATTUALE → attivato.
+  if (validaKey(licenza.key)) return true;
+
+  // 2. RETE DI SICUREZZA: la key non valida più per il codice attuale (es. il
+  //    codice macchina è cambiato per un motivo hardware). MA se questo PC era
+  //    GIÀ stato attivato in passato con una key che a suo tempo era corretta
+  //    per il codice di ALLORA, NON richiedo di riattivare.
+  //    Verifico che la key salvata fosse valida per il codiceMacchina memorizzato
+  //    al momento dell'attivazione: se sì, l'attivazione era autentica e la
+  //    mantengo (evita la riattivazione fastidiosa).
+  if (licenza.codiceMacchina && licenza.key) {
+    const keyAttesaPerVecchioCodice = calcolaKeyPerCodice(licenza.codiceMacchina);
+    const keySalvataNorm = (licenza.key || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const keyAttesaNorm = (keyAttesaPerVecchioCodice || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (keySalvataNorm === keyAttesaNorm) {
+      // L'attivazione era autentica. Aggiorno il file col nuovo codice macchina
+      // così le prossime volte la verifica veloce (punto 1) funziona subito.
+      try { salvaLicenza(app, licenza.key); } catch (e) {}
+      return true;
+    }
+  }
+
+  return false;
 }
 
 module.exports = {

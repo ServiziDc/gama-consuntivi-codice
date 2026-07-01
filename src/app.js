@@ -45,7 +45,7 @@ const state = {
   prossimoNumeroCbre: null,
   prossimoNumeroCreval: null,
   prossimoNumeroPreventivo: null,
-  prossimoNumeroDussmann: { nhood: null, edile: null, impiantistica: null },
+  prossimoNumeroDussmann: { nhood: null, edile: null, impiantistica: null, unico: null },
   modificaInCorso: null,
   modificaInCorsoDuss: null,
   modificaInCorsoPrev: null,
@@ -62,6 +62,7 @@ const state = {
   cartellaRootName: null,        // nome cartella per UI
   // Rilevo l'ambiente: Electron (con API ricca) o browser puro
   isElectron: !!(window.electronAPI && window.electronAPI.isElectron),
+  modalitaTest: false,
   fsApiSupported: ("showDirectoryPicker" in window),
   settings: {
     intestazione: "GAMA SERVICE S.R.L VIALE MONZA,69 20845, SOVICO (MB)",
@@ -89,10 +90,70 @@ function avviaQuandoPronto() {
   fb = window.firebaseDB;
   firebaseReady = true;
   console.log("✅ App: Firebase pronto, avvio initApp()");
-  initApp().catch(err => {
-    console.error("❌ initApp ha lanciato un errore:", err);
-    showToast("Errore avvio app: " + err.message, "error", 8000);
+
+  // MODALITÀ TEST: se il programma è stato avviato con TEST-GAMA.bat, blocco
+  // TUTTE le scritture su Firebase. L'app funziona normalmente (genera Word/PDF,
+  // mostra i dati) ma contatori, consuntivi e colori NON vengono mai salvati.
+  // Così puoi provare tutto liberamente senza sporcare il database vero.
+  attivaModalitaTestSeRichiesto().finally(() => {
+    initApp().catch(err => {
+      console.error("❌ initApp ha lanciato un errore:", err);
+      showToast("Errore avvio app: " + err.message, "error", 8000);
+    });
   });
+  return;
+}
+
+// Controlla se siamo in modalità test e, in tal caso, "neutralizza" le scritture
+// su Firebase sostituendole con versioni finte che non salvano nulla.
+async function attivaModalitaTestSeRichiesto() {
+  try {
+    if (!(window.electronAPI && window.electronAPI.getModalitaTest)) return;
+    const r = await window.electronAPI.getModalitaTest();
+    if (!r || !r.test) return;
+
+    state.modalitaTest = true;
+
+    // Sostituisco le 4 funzioni di SCRITTURA con versioni che non fanno nulla
+    // (ma restituiscono una Promise risolta, così il resto del codice non si rompe).
+    // Le funzioni di LETTURA (getDoc, getDocs, onSnapshot, query...) restano vere,
+    // così vedi i dati reali ma non puoi modificarli.
+    const finto = async () => { return { id: "TEST-NESSUN-SALVATAGGIO" }; };
+    fb.setDoc = finto;
+    fb.updateDoc = finto;
+    fb.deleteDoc = finto;
+    fb.addDoc = finto;
+    fb.runTransaction = async (db, fn) => {
+      // Eseguo la transazione con un oggetto finto che non scrive
+      const txFinta = {
+        get: async (ref) => fb.getDoc(ref),
+        set: () => {}, update: () => {}, delete: () => {}
+      };
+      try { return await fn(txFinta); } catch (e) { return null; }
+    };
+
+    console.log("🧪 MODALITÀ TEST attiva: nessuna scrittura su Firebase");
+    mostraBannerModalitaTest();
+  } catch (e) {
+    console.warn("Controllo modalità test:", e);
+  }
+}
+
+// Mostra una banda rossa in alto per ricordare che sei in modalità test
+function mostraBannerModalitaTest() {
+  if (document.getElementById("bannerModalitaTest")) return;
+  const banner = document.createElement("div");
+  banner.id = "bannerModalitaTest";
+  banner.textContent = "🧪 MODALITÀ TEST — Niente viene salvato su Firebase (puoi provare tutto liberamente)";
+  banner.style.cssText = [
+    "position:fixed", "top:0", "left:0", "right:0", "z-index:99999",
+    "background:#dc2626", "color:#fff", "text-align:center",
+    "font-weight:bold", "font-size:14px", "padding:8px 12px",
+    "box-shadow:0 2px 8px rgba(0,0,0,0.3)", "letter-spacing:0.3px"
+  ].join(";");
+  document.body.appendChild(banner);
+  // Spingo giù il contenuto così il banner non copre nulla
+  document.body.style.paddingTop = "40px";
 }
 
 // Caso A: l'evento arriverà più tardi (firebase-config caricato dopo app.js)
@@ -697,18 +758,21 @@ function setupRealtimeListeners() {
     aggiornaPrevNumeroUI();
   });
 
-  // Contatori DUSSMANN: uno per ogni gruppo (numerazione separata)
-  Object.keys(DUSS_GRUPPO_KEY).forEach(nomeGruppo => {
-    const key = DUSS_GRUPPO_KEY[nomeGruppo];
-    fb.onSnapshot(fb.doc(fb.db, "config", dussContatoreDocId(key)), (snap) => {
-      if (snap.exists()) {
-        state.prossimoNumeroDussmann[key] = (snap.data().ultimoNumero || 0) + 1;
-      } else {
-        state.prossimoNumeroDussmann[key] = 1;
-      }
-      aggiornaDussNumeroUI();
-    }, (err) => console.warn(`Listener contatore ${key}:`, err.message));
-  });
+  // Contatore DUSSMANN UNICO: un solo numero progressivo per tutti i gruppi
+  fb.onSnapshot(fb.doc(fb.db, "config", "contatore_dussmann_unico"), (snap) => {
+    let prossimo;
+    if (snap.exists()) {
+      prossimo = (snap.data().ultimoNumero || 0) + 1;
+    } else {
+      prossimo = 1;
+    }
+    // Lo stesso numero vale per tutti i gruppi (numerazione condivisa)
+    state.prossimoNumeroDussmann.nhood = prossimo;
+    state.prossimoNumeroDussmann.edile = prossimo;
+    state.prossimoNumeroDussmann.impiantistica = prossimo;
+    state.prossimoNumeroDussmann.unico = prossimo;
+    aggiornaDussNumeroUI();
+  }, (err) => console.warn("Listener contatore dussmann unico:", err.message));
 
   // Clienti CBRE personalizzati (aggiunti dall'utente, condivisi su tutti i PC)
   fb.onSnapshot(fb.doc(fb.db, "config", "clienti_cbre_custom"), (snap) => {
@@ -1447,13 +1511,18 @@ async function generaConsuntivo() {
       const res = await salvaInCartella(blob, filename, tipo, c.mese);
       await gestisciOdlUpload(filename, tipo, c.mese);
 
-      // Salvo anche una copia del PDF sul Desktop (documento finale, senza prefisso ANTEPRIMA)
-      try {
-        if (window.electronAPI.salvaAnteprima) {
-          const arrPdf = await blob.arrayBuffer();
-          await window.electronAPI.salvaAnteprima(filename, Array.from(new Uint8Array(arrPdf)), false);
-        }
-      } catch(e) { console.warn("PDF Desktop:", e); }
+      // Salvo anche una copia del PDF sul Desktop (documento finale, senza prefisso
+      // ANTEPRIMA). NOTA: per CBRE/CREVAL il PDF sul Desktop è GIÀ generato da
+      // salvaInCartella → salvaConsuntivo (res.pdfSalvato). Questa è una copia
+      // aggiuntiva solo se quella non è andata a buon fine, per non perdere il PDF.
+      if (!res.pdfSalvato) {
+        try {
+          if (window.electronAPI.salvaAnteprima) {
+            const arrPdf = await blob.arrayBuffer();
+            await window.electronAPI.salvaAnteprima(filename, Array.from(new Uint8Array(arrPdf)), false);
+          }
+        } catch(e) { console.warn("PDF Desktop:", e); }
+      }
 
       if (res.saved) {
         const offTxt = res.inOffline ? " [NAS OFFLINE - si sincronizzerà]" : "";
@@ -1555,6 +1624,12 @@ function validaForm() {
 async function prenotaNumero(tipo) {
   if (!["cbre","creval"].includes(tipo)) {
     throw new Error("Tipo non valido: " + tipo);
+  }
+  // In MODALITÀ TEST restituisco un numero finto senza toccare Firebase
+  if (state.modalitaTest) {
+    if (tipo === "cbre") return state.prossimoNumeroCbre || 999;
+    if (tipo === "creval") return state.prossimoNumeroCreval || 999;
+    return 999;
   }
   const docRef = fb.doc(fb.db, "config", `contatore_${tipo}`);
   return await fb.runTransaction(fb.db, async (tx) => {
@@ -1689,6 +1764,65 @@ function escapeXml(s) {
 // elenco voci libero, cartella di salvataggio SEPARATA, solo .docx.
 
 // Costruisce il documento DOCX del preventivo dal template
+// Costruisce l'XML di una tabella Word a 5 colonne per il preventivo:
+// DESCRIZIONE | U.M. | Q.tà | P. Unitario | P. Totale, con header blu, le righe
+// delle voci e la riga finale del totale. Sostituisce la vecchia tabella a 2 colonne.
+function costruisciTabellaVociXml(voci, totale) {
+  // Stili riutilizzabili
+  const fontHeader = '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:b/><w:color w:val="FFFFFF"/><w:sz w:val="18"/></w:rPr>';
+  const fontCella  = '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:color w:val="222222"/><w:sz w:val="18"/></w:rPr>';
+  const fontTot    = '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:b/><w:color w:val="222222"/><w:sz w:val="20"/></w:rPr>';
+
+  // Larghezze colonne (in dxa): descrizione larga, le altre strette
+  const larghezze = [4600, 900, 900, 1500, 1500];
+
+  const cellaHeader = (testo, w, jc) =>
+    `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${w}"/><w:shd w:val="clear" w:color="auto" w:fill="1F3864"/></w:tcPr>` +
+    `<w:p><w:pPr><w:jc w:val="${jc}"/><w:spacing w:after="0"/></w:pPr><w:r>${fontHeader}<w:t xml:space="preserve">${escapeXml(testo)}</w:t></w:r></w:p></w:tc>`;
+
+  const cellaTesto = (testo, w, jc, font) =>
+    `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${w}"/></w:tcPr>` +
+    `<w:p><w:pPr><w:jc w:val="${jc}"/><w:spacing w:after="0"/></w:pPr><w:r>${font}<w:t xml:space="preserve">${escapeXml(testo)}</w:t></w:r></w:p></w:tc>`;
+
+  // Header
+  const header = '<w:tr>' +
+    cellaHeader("DESCRIZIONE", larghezze[0], "left") +
+    cellaHeader("U.M.", larghezze[1], "center") +
+    cellaHeader("Q.tà", larghezze[2], "center") +
+    cellaHeader("P. Unitario", larghezze[3], "center") +
+    cellaHeader("P. Totale", larghezze[4], "center") +
+    '</w:tr>';
+
+  // Righe voci
+  const righe = (voci || []).map(v => {
+    const qtaStr = (v.qta != null) ? String(v.qta).replace(".", ",") : "";
+    return '<w:tr>' +
+      cellaTesto(v.descrizione || "", larghezze[0], "left", fontCella) +
+      cellaTesto(v.um || "", larghezze[1], "center", fontCella) +
+      cellaTesto(qtaStr, larghezze[2], "center", fontCella) +
+      cellaTesto("€ " + formatEuro(v.pu || 0), larghezze[3], "right", fontCella) +
+      cellaTesto("€ " + formatEuro(v.ptot || 0), larghezze[4], "right", fontCella) +
+      '</w:tr>';
+  }).join("");
+
+  // Riga totale (le prime 4 colonne unite con etichetta, ultima col totale)
+  const rigaTotale = '<w:tr>' +
+    `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${larghezze[0]+larghezze[1]+larghezze[2]+larghezze[3]}"/><w:gridSpan w:val="4"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr>` +
+    `<w:p><w:pPr><w:jc w:val="right"/><w:spacing w:after="0"/></w:pPr><w:r>${fontTot}<w:t xml:space="preserve">TOTALE IMPONIBILE OFFERTA</w:t></w:r></w:p></w:tc>` +
+    `<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="${larghezze[4]}"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr>` +
+    `<w:p><w:pPr><w:jc w:val="right"/><w:spacing w:after="0"/></w:pPr><w:r>${fontTot}<w:t xml:space="preserve">€ ${formatEuro(totale || 0)}</w:t></w:r></w:p></w:tc>` +
+    '</w:tr>';
+
+  const gridCols = larghezze.map(w => `<w:gridCol w:w="${w}"/>`).join("");
+
+  return '<w:tbl>' +
+    '<w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:type="auto" w:w="0"/>' +
+    '<w:tblLook w:firstColumn="1" w:firstRow="1" w:lastColumn="0" w:lastRow="0" w:noHBand="0" w:noVBand="1" w:val="04A0"/></w:tblPr>' +
+    '<w:tblGrid>' + gridCols + '</w:tblGrid>' +
+    header + righe + rigaTotale +
+    '</w:tbl>';
+}
+
 async function buildPreventivoDocx(p, opzioni = {}) {
   const conTimbroAccettato = opzioni.conTimbroAccettato === true;
   const anno = p.dataDocumento ? p.dataDocumento.split("-")[0] : new Date().getFullYear();
@@ -1717,16 +1851,37 @@ async function buildPreventivoDocx(p, opzioni = {}) {
 
   // Riempie una copia del blocco coi dati di UNA offerta (destinatario/data/numero uguali per tutte)
   const riempiBlocco = (off) => {
-    const elencoVoci = (off.elenco || "").split("\n").map(s => s.trim()).filter(s => s.length > 0);
-    const elencoXml = elencoVoci.map(v => `• ${escapeXml(v)}`).join("</w:t><w:br/><w:t>");
     let b = bloccoTemplate;
+
+    // Preparo le voci (dalla tabella nuova o, se vecchio preventivo, dall'elenco testuale)
+    let voci;
+    if (Array.isArray(off.voci) && off.voci.length > 0) {
+      voci = off.voci;
+    } else {
+      // Compatibilità con vecchi preventivi salvati: converto l'elenco in voci
+      voci = (off.elenco || "").split("\n").map(s => s.trim()).filter(s => s.length > 0)
+        .map(descr => ({ descrizione: descr, um: "", qta: null, pu: 0, ptot: 0 }));
+    }
+    const totaleOfferta = off.importo || voci.reduce((s, v) => s + (v.ptot || 0), 0);
+
+    // SOSTITUISCO l'intera tabella a 2 colonne (che contiene {{ELENCO}} e {{IMPORTO}})
+    // con la nuova tabella a 5 colonne (DESCRIZIONE | U.M. | Q.tà | P.Unit | P.Tot).
+    const idxElenco = b.indexOf("{{ELENCO}}");
+    if (idxElenco >= 0) {
+      const inizioTbl = b.lastIndexOf("<w:tbl>", idxElenco);
+      const fineTbl = b.indexOf("</w:tbl>", idxElenco) + "</w:tbl>".length;
+      if (inizioTbl >= 0 && fineTbl > inizioTbl) {
+        const nuovaTabella = costruisciTabellaVociXml(voci, totaleOfferta);
+        b = b.slice(0, inizioTbl) + nuovaTabella + b.slice(fineTbl);
+      }
+    }
+
     b = b.split("{{DESTINATARIO}}").join(destXml);   // raw (contiene <w:br/>)
-    b = b.split("{{ELENCO}}").join(elencoXml);       // raw
     b = b.split("{{DATA_DOC}}").join(escapeXml(formatDateIt(p.dataDocumento)));
     b = b.split("{{NUMERO}}").join(escapeXml(String(p.numero)));
     b = b.split("{{ANNO}}").join(escapeXml(String(anno)));
     b = b.split("{{OGGETTO}}").join(escapeXml(off.oggetto || ""));
-    b = b.split("{{IMPORTO}}").join(escapeXml(formatEuro(off.importo || 0)));
+    b = b.split("{{IMPORTO}}").join(escapeXml(formatEuro(totaleOfferta)));
     b = b.split("{{PAGAMENTI}}").join(escapeXml(off.pagamenti || ""));
     return b;
   };
@@ -1793,6 +1948,10 @@ async function inserisciTimbroAccettato(zip, docXml) {
 
 // Prenota un numero preventivo (contatore separato su Firebase)
 async function prenotaNumeroPreventivo() {
+  // In MODALITÀ TEST restituisco un numero finto senza toccare Firebase
+  if (state.modalitaTest) {
+    return state.prossimoNumeroPreventivo || 999;
+  }
   const docRef = fb.doc(fb.db, "config", "contatore_preventivo");
   return await fb.runTransaction(fb.db, async (tx) => {
     const snap = await tx.get(docRef);
@@ -1909,6 +2068,108 @@ const OPZIONI_PAGAMENTI_PREV = [
   ["rimessa diretta", "Rimessa diretta"],
   ["", "Nessuno"]
 ];
+// Unità di misura per la tabella preventivi (tendina + possibilità di scrivere)
+const UNITA_MISURA_PREV = ["a corpo", "n", "c", "mt", "ml", "mq", "mc", "kg", "lt", "h", "gg", "q.li", "t"];
+
+// Crea una riga della tabella voci del preventivo
+function htmlRigaVocePreventivo() {
+  const opts = UNITA_MISURA_PREV.map(u => `<option value="${u}">${u}</option>`).join("");
+  return `
+  <tr class="prev-voce-riga">
+    <td style="border:1px solid #d1d5db;padding:2px;"><input type="text" class="voce-descrizione" placeholder="es. Tubo multistrato De 63" style="width:100%;box-sizing:border-box;border:none;padding:6px;font-size:13px;"></td>
+    <td style="border:1px solid #d1d5db;padding:2px;">
+      <select class="voce-um-sel" style="width:100%;box-sizing:border-box;border:none;padding:6px;font-size:13px;">${opts}<option value="__ALTRO__">Altro...</option></select>
+      <input type="text" class="voce-um-altro" placeholder="scrivi U.M." style="width:100%;box-sizing:border-box;border:none;padding:6px;font-size:13px;display:none;">
+    </td>
+    <td style="border:1px solid #d1d5db;padding:2px;"><input type="number" class="voce-qta" step="0.01" min="0" value="1" style="width:100%;box-sizing:border-box;border:none;padding:6px;font-size:13px;text-align:right;"></td>
+    <td style="border:1px solid #d1d5db;padding:2px;"><input type="number" class="voce-pu" step="0.001" min="0" placeholder="0,000" style="width:100%;box-sizing:border-box;border:none;padding:6px;font-size:13px;text-align:right;"></td>
+    <td style="border:1px solid #d1d5db;padding:6px;text-align:right;" class="voce-ptot">€ 0,00</td>
+    <td style="border:1px solid #d1d5db;padding:2px;text-align:center;"><button type="button" class="voce-rimuovi" style="background:#ef4444;color:white;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;" title="Togli">✖</button></td>
+  </tr>`;
+}
+
+// Aggiunge una riga voce alla tabella di un blocco offerta
+function aggiungiVocePreventivo(bloccoOfferta, dati) {
+  const tbody = bloccoOfferta.querySelector(".prev-voci-body");
+  if (!tbody) return;
+  const wrap = document.createElement("tbody");
+  wrap.innerHTML = htmlRigaVocePreventivo().trim();
+  const riga = wrap.firstChild;
+  tbody.appendChild(riga);
+
+  const selUm = riga.querySelector(".voce-um-sel");
+  const inpUmAltro = riga.querySelector(".voce-um-altro");
+  const inpQta = riga.querySelector(".voce-qta");
+  const inpPu = riga.querySelector(".voce-pu");
+
+  // Precompilo se ho dati salvati
+  if (dati) {
+    riga.querySelector(".voce-descrizione").value = dati.descrizione || "";
+    inpQta.value = (dati.qta != null && dati.qta !== "") ? dati.qta : "1";
+    inpPu.value = (dati.pu != null && dati.pu !== "") ? dati.pu : "";
+    // U.M.: se è tra quelle standard uso la tendina, altrimenti "Altro"
+    if (dati.um && UNITA_MISURA_PREV.includes(dati.um)) {
+      selUm.value = dati.um;
+    } else if (dati.um) {
+      selUm.value = "__ALTRO__";
+      inpUmAltro.style.display = "";
+      inpUmAltro.value = dati.um;
+    }
+  }
+
+  // U.M.: tendina che sblocca la casella "scrivi tu" quando scelgo "Altro..."
+  selUm.addEventListener("change", () => {
+    if (selUm.value === "__ALTRO__") { inpUmAltro.style.display = ""; inpUmAltro.focus(); }
+    else { inpUmAltro.style.display = "none"; inpUmAltro.value = ""; }
+  });
+
+  // Ricalcolo totale quando cambiano quantità o prezzo
+  const ricalcola = () => ricalcolaTotaliPreventivo(bloccoOfferta);
+  inpQta.addEventListener("input", ricalcola);
+  inpPu.addEventListener("input", ricalcola);
+
+  // Rimuovi riga
+  riga.querySelector(".voce-rimuovi").addEventListener("click", () => {
+    riga.remove();
+    ricalcolaTotaliPreventivo(bloccoOfferta);
+  });
+
+  ricalcolaTotaliPreventivo(bloccoOfferta);
+}
+
+// Ricalcola il P.Totale di ogni riga e il totale generale dell'offerta
+function ricalcolaTotaliPreventivo(bloccoOfferta) {
+  let totale = 0;
+  bloccoOfferta.querySelectorAll(".prev-voce-riga").forEach(riga => {
+    const qta = parseFloat(riga.querySelector(".voce-qta").value) || 0;
+    const pu = parseFloat(riga.querySelector(".voce-pu").value) || 0;
+    const ptot = qta * pu;
+    totale += ptot;
+    riga.querySelector(".voce-ptot").textContent = "€ " + ptot.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  });
+  const cellaTot = bloccoOfferta.querySelector(".prev-totale-cella");
+  if (cellaTot) cellaTot.textContent = "€ " + totale.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return totale;
+}
+
+// Legge le voci della tabella di un'offerta
+function leggiVociPreventivo(bloccoOfferta) {
+  return Array.from(bloccoOfferta.querySelectorAll(".prev-voce-riga")).map(riga => {
+    const selUm = riga.querySelector(".voce-um-sel");
+    const umAltro = riga.querySelector(".voce-um-altro");
+    const um = (selUm.value === "__ALTRO__") ? (umAltro.value || "").trim() : selUm.value;
+    const qta = parseFloat(riga.querySelector(".voce-qta").value) || 0;
+    const pu = parseFloat(riga.querySelector(".voce-pu").value) || 0;
+    return {
+      descrizione: (riga.querySelector(".voce-descrizione").value || "").trim(),
+      um: um,
+      qta: qta,
+      pu: pu,
+      ptot: qta * pu
+    };
+  }).filter(v => v.descrizione || v.pu > 0);
+}
+
 function htmlBloccoPreventivo() {
   const opts = OPZIONI_PAGAMENTI_PREV.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
   return `
@@ -1922,17 +2183,30 @@ function htmlBloccoPreventivo() {
       <input type="text" class="prev-oggetto" placeholder="OFFERTA SISTEMAZIONE PORTA IN VETRO PRESSO BNL...">
     </div></div>
     <div class="form-row"><div class="form-field full-width">
-      <label>Elenco voci (una per riga, ognuna diventa un punto)</label>
-      <textarea class="prev-elenco" rows="6" placeholder="Oneri di sicurezza
-Lavoro in quota
-Manodopera specializzata
-..."></textarea>
+      <label>Voci del preventivo</label>
+      <table class="prev-tabella" style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">
+        <thead>
+          <tr style="background:#f3f4f6;">
+            <th style="text-align:left;padding:6px;border:1px solid #d1d5db;">Descrizione</th>
+            <th style="padding:6px;border:1px solid #d1d5db;width:90px;">U.M.</th>
+            <th style="padding:6px;border:1px solid #d1d5db;width:70px;">Q.tà</th>
+            <th style="padding:6px;border:1px solid #d1d5db;width:100px;">P. Unitario</th>
+            <th style="padding:6px;border:1px solid #d1d5db;width:110px;">P. Totale</th>
+            <th style="padding:6px;border:1px solid #d1d5db;width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody class="prev-voci-body"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" style="text-align:right;padding:8px;font-weight:700;border:1px solid #d1d5db;">TOTALE:</td>
+            <td class="prev-totale-cella" style="padding:8px;font-weight:700;color:#16a34a;border:1px solid #d1d5db;text-align:right;">€ 0,00</td>
+            <td style="border:1px solid #d1d5db;"></td>
+          </tr>
+        </tfoot>
+      </table>
+      <button type="button" class="btn btn-secondary prev-aggiungi-voce" style="background:#16a34a;color:white;padding:6px 14px;">➕ Aggiungi voce</button>
     </div></div>
     <div class="form-row">
-      <div class="form-field">
-        <label>Importo totale (€)</label>
-        <input type="number" class="prev-importo" step="0.01" min="0" placeholder="1269.00">
-      </div>
       <div class="form-field">
         <label>Pagamenti</label>
         <select class="prev-pagamenti">${opts}</select>
@@ -1950,12 +2224,22 @@ function aggiungiBloccoPreventivo(dati) {
   const inpOgg = blocco.querySelector(".prev-oggetto");
   if (dati) {
     inpOgg.value = dati.oggetto || "";
-    blocco.querySelector(".prev-elenco").value = dati.elenco || "";
-    blocco.querySelector(".prev-importo").value = (dati.importo != null && dati.importo !== "") ? dati.importo : "";
     if (dati.pagamenti != null) blocco.querySelector(".prev-pagamenti").value = dati.pagamenti;
+    // Carico le voci salvate nella tabella
+    if (Array.isArray(dati.voci) && dati.voci.length > 0) {
+      dati.voci.forEach(v => aggiungiVocePreventivo(blocco, v));
+    } else {
+      aggiungiVocePreventivo(blocco); // almeno una riga vuota
+    }
   } else {
     inpOgg.value = PREFISSO_OFFERTA; // precompilo "OFFERTA " come nel vecchio campo
+    aggiungiVocePreventivo(blocco); // parto con una riga vuota
   }
+
+  // Pulsante "+ Aggiungi voce"
+  const btnAggVoce = blocco.querySelector(".prev-aggiungi-voce");
+  if (btnAggVoce) btnAggVoce.addEventListener("click", () => aggiungiVocePreventivo(blocco));
+
   blocco.querySelector(".prev-rimuovi").addEventListener("click", () => {
     if (document.querySelectorAll("#prevBlocchi .prev-blocco").length <= 1) {
       showToast("⚠️ Deve restare almeno un'offerta", "warn");
@@ -1977,12 +2261,16 @@ function rinumeraBlocchiPreventivo() {
   });
 }
 function leggiOffertePreventivo() {
-  return Array.from(document.querySelectorAll("#prevBlocchi .prev-blocco")).map(b => ({
-    oggetto: (b.querySelector(".prev-oggetto").value || "").trim(),
-    elenco: (b.querySelector(".prev-elenco").value || "").trim(),
-    importo: parseFloat(b.querySelector(".prev-importo").value) || 0,
-    pagamenti: b.querySelector(".prev-pagamenti").value
-  }));
+  return Array.from(document.querySelectorAll("#prevBlocchi .prev-blocco")).map(b => {
+    const voci = leggiVociPreventivo(b);
+    const importo = voci.reduce((s, v) => s + (v.ptot || 0), 0);
+    return {
+      oggetto: (b.querySelector(".prev-oggetto").value || "").trim(),
+      voci: voci,
+      importo: importo,           // totale calcolato dalla somma dei P.Totali
+      pagamenti: b.querySelector(".prev-pagamenti").value
+    };
+  });
 }
 function resetBlocchiPreventivo() {
   const cont = document.getElementById("prevBlocchi");
@@ -2082,15 +2370,26 @@ async function generaPreventivo() {
     const { blob, filename } = await buildPreventivoDocx(p);
     if (state.isElectron) {
       const arr = await blob.arrayBuffer();
-      const r = await window.electronAPI.salvaPreventivo(filename, Array.from(new Uint8Array(arr)));
-      // Salvo anche una copia del PDF sul Desktop
+      const bytesArr = Array.from(new Uint8Array(arr));
+      const r = await window.electronAPI.salvaPreventivo(filename, bytesArr);
+      // Salvo anche una copia del PDF sul Desktop (riuso lo stesso array di bytes)
+      let pdfOk = false, pdfErrore = "";
       try {
         if (window.electronAPI.salvaAnteprima) {
-          await window.electronAPI.salvaAnteprima(filename, Array.from(new Uint8Array(arr)), false);
+          const rpdf = await window.electronAPI.salvaAnteprima(filename, bytesArr, false);
+          pdfOk = !!(rpdf && rpdf.ok);
+          if (!pdfOk) pdfErrore = (rpdf && rpdf.errore) || "PDF non creato";
+        } else {
+          pdfErrore = "Funzione PDF non disponibile";
         }
-      } catch(e) { console.warn("PDF Desktop:", e); }
+      } catch(e) { pdfErrore = e.message; console.warn("PDF Desktop preventivo:", e); }
+
       if (r.ok) {
-        showToast(`✅ Preventivo NR ${numeroPrenotato} salvato! 📕 PDF anche sul Desktop`, "success", 6000);
+        if (pdfOk) {
+          showToast(`✅ Preventivo NR ${numeroPrenotato} salvato! 📕 PDF anche sul Desktop`, "success", 6000);
+        } else {
+          showToast(`✅ Preventivo NR ${numeroPrenotato} salvato sul NAS. ⚠️ PDF sul Desktop non creato: ${pdfErrore}`, "warn", 8000);
+        }
       } else {
         showToast(`❌ Errore salvataggio: ${r.errore}`, "error");
       }
@@ -2698,13 +2997,12 @@ function aggiornaDussNumeroUI() {
   const btn = document.getElementById("dussNumeroBtn");
   if (prev) prev.textContent = n;
   if (btn) btn.textContent = `NR ${n}`;
-  // Card in alto: i 3 numeri per gruppo
+  // Card unica DUSSMANN in alto: mostra il prossimo numero (contatore unico).
   const cN = document.getElementById("cardDussNhood");
-  const cE = document.getElementById("cardDussEdile");
-  const cI = document.getElementById("cardDussImpiantistica");
-  if (cN) cN.textContent = state.prossimoNumeroDussmann.nhood ?? "—";
-  if (cE) cE.textContent = state.prossimoNumeroDussmann.edile ?? "—";
-  if (cI) cI.textContent = state.prossimoNumeroDussmann.impiantistica ?? "—";
+  const numeroUnico = state.prossimoNumeroDussmann.unico
+    ?? state.prossimoNumeroDussmann.nhood
+    ?? "—";
+  if (cN) cN.textContent = numeroUnico;
 }
 
 function setupDussmannTab() {
@@ -2723,9 +3021,25 @@ function setupDussmannTab() {
   // Cambio gruppo: ricompongo l'oggetto col modello giusto + aggiorno il numero
   const gruppoSel = document.getElementById("dussGruppo");
   if (gruppoSel) gruppoSel.addEventListener("change", () => {
+    compilaDestinatarioSeEni();
+    aggiornaVisibilitaOperaioEdile();
     precompilaOggettoDussmann();
     aggiornaDussNumeroUI();
   });
+
+  // Menu operaio EDILE: quando cambia, aggiorno l'oggetto col nome scelto
+  const operaioSel = document.getElementById("dussOperaioEdile");
+  if (operaioSel) operaioSel.addEventListener("change", () => {
+    const inputAltro = document.getElementById("dussOperaioEdileAltro");
+    if (operaioSel.value === "__ALTRO__") {
+      if (inputAltro) { inputAltro.style.display = ""; inputAltro.focus(); }
+    } else {
+      if (inputAltro) inputAltro.style.display = "none";
+      applicaOperaioEdileAOggetto();
+    }
+  });
+  const operaioAltro = document.getElementById("dussOperaioEdileAltro");
+  if (operaioAltro) operaioAltro.addEventListener("input", () => applicaOperaioEdileAOggetto());
 
   // Ricalcolo automatico su tutti i campi numerici
   const campiCalcolo = ["dussOre","dussRetribuzione","dussTredicesima","dussFestivita",
@@ -2755,6 +3069,7 @@ function setupDussmannTab() {
   if (btnVoce) btnVoce.addEventListener("click", () => aggiungiVoceRimborso());
 
   ricalcolaDussmann();
+  aggiornaVisibilitaOperaioEdile();
   precompilaOggettoDussmann();
 }
 
@@ -2780,8 +3095,16 @@ function aggiornaCampiDussmann() {
 // di personalizzato (a meno che il campo sia vuoto o contenga un modello precedente).
 const MODELLI_OGGETTO_DUSSMANN = {
   "NHOOD": {
-    distacco: "CONTABILITA' CONSUNTIVO QUOTA DISTACCO ATTIVITA' DI SERVIZIO DI MANUTENZIONE E CONDUZIONE VARIE NS TECNICO NOME COGNOME RIF. VS COMMESSA NHOOD NR ___ PRESIDIO CC ___ DAL ___ AL ___",
-    servizio: "CONTABILITA' CONSUNTIVO QUOTA DI SERVIZIO ATTIVITA' DI MANUTENZIONE E CONDUZIONE VARIE NS TECNICO NOME COGNOME RIF. VS COMMESSA NHOOD NR ___ CC ___ DAL ___ AL ___"
+    distacco: "CONTABILITA' CONSUNTIVO QUOTA DISTACCO ATTIVITA' DI SERVIZIO DI MANUTENZIONE E CONDUZIONE VARIE NS TECNICO HURZHUY IVAN RIF. VS COMMESSA NHOOD NR ___ PRESIDIO CC ___ DAL ___ AL ___",
+    servizio: "CONTABILITA' CONSUNTIVO QUOTA DI SERVIZIO ATTIVITA' DI MANUTENZIONE E CONDUZIONE VARIE NS TECNICO HURZHUY IVAN RIF. VS COMMESSA NHOOD NR ___ CC ___ DAL ___ AL ___"
+  },
+  "ENI / GI.L.C.": {
+    distacco: "CONTABILITA' CONSUNTIVO QUOTA DISTACCO PERSONALE BRUSENKO VALENTYN ATTIVITA' DI MANUTENZIONE E CONDUZIONE IMPIANTI MECCANICI/TECNOLOGICI PRESSO LA SEDE DI ENI SAN DONATO MILANESE 2° PALAZZO IN PIAZZA BOLDRINI,1 MESE DI ___",
+    servizio: "CONTABILITA' CONSUNTIVO QUOTA SERVIZIO BRUSENKO VALENTYN ATTIVITA' DI MANUTENZIONE E CONDUZIONE IMPIANTI MECCANICI/TECNOLOGICI PRESSO LA SEDE DI ENI SAN DONATO MILANESE 2° PALAZZO IN PIAZZA BOLDRINI,1 MESE DI ___"
+  },
+  "RAI VIA MECENATE": {
+    distacco: "CONTABILITA' CONSUNTIVO QUOTA DISTACCO PERSONALE CASCIELLO PIETRO ATTIVITA' DI MANUTENZIONE E CONDUZIONE IMPIANTI ELETTRICI PRESSO LA SEDE RAI DI VIA MECENATE, 10 MILANO RIF. VS COMMESSA NR 410 MESE DI ___",
+    servizio: "CONTABILITA' CONSUNTIVO QUOTA SERVIZIO CASCIELLO PIETRO ATTIVITA' DI MANUTENZIONE E CONDUZIONE IMPIANTI ELETTRICI PRESSO LA SEDE RAI DI VIA MECENATE, 10 MILANO RIF. VS COMMESSA NR 410 MESE DI ___"
   },
   "SQUADRA EDILE": {
     distacco: "CONTABILITA' CONSUNTIVO QUOTA DISTACCO PERSONALE TECNICO NOME COGNOME ATTIVITA' DI MANUTENZIONE /RIPARZIONE/RIPRISTINO EDILE PRESSO LE DIVERSE SEDI FIBERCOP SITE IN LOMBARDIA ESEGUITE NEL MESE DI ___",
@@ -2802,6 +3125,94 @@ function _tuttiModelliOggetto() {
   return arr;
 }
 
+// Quando il gruppo è "ENI / GI.L.C.", compilo automaticamente il destinatario
+// con i dati fissi di GI.L.C. IMPIANTI SRL (così il consuntivo va nella cartella
+// ENI e l'intestazione è corretta). Il campo resta comunque modificabile.
+// Operai per gruppo (menu a tendina). Si possono aggiungere altri nomi qui.
+const OPERAI_PER_GRUPPO = {
+  "SQUADRA EDILE": ["NICOLA SCIARRA", "EL MALKI AHMED"],
+  "SQUADRA IMPIANTISTICA": ["ERION DORACI", "SIDHON BISHOUNADI"]
+};
+
+// Mostra/nasconde e popola il menu operaio in base al gruppo selezionato.
+// Vale per SQUADRA EDILE e SQUADRA IMPIANTISTICA (operaio scelto da tendina).
+function aggiornaVisibilitaOperaioEdile() {
+  const gruppo = document.getElementById("dussGruppo").value;
+  const riga = document.getElementById("rigaOperaioEdile");
+  const sel = document.getElementById("dussOperaioEdile");
+  const label = document.getElementById("labelOperaioMenu");
+  const inputAltro = document.getElementById("dussOperaioEdileAltro");
+  if (!riga || !sel) return;
+
+  const operai = OPERAI_PER_GRUPPO[gruppo];
+  if (operai) {
+    riga.style.display = "";
+    if (label) label.textContent = `Operaio ${gruppo === "SQUADRA EDILE" ? "EDILE" : "IMPIANTISTICA"} (si inserisce nell'oggetto)`;
+    // Ripopolo le opzioni col set giusto di operai
+    sel.innerHTML = operai.map(n => `<option value="${n}">${n}</option>`).join("")
+      + `<option value="__ALTRO__">Altro... (scrivi tu)</option>`;
+    if (inputAltro) { inputAltro.style.display = "none"; inputAltro.value = ""; }
+  } else {
+    riga.style.display = "none";
+  }
+}
+
+// Restituisce il nome operaio EDILE attualmente scelto (dal menu o dalla casella "Altro")
+function operaioEdileScelto() {
+  const sel = document.getElementById("dussOperaioEdile");
+  if (!sel) return "";
+  if (sel.value === "__ALTRO__") {
+    const altro = document.getElementById("dussOperaioEdileAltro");
+    return (altro && altro.value || "").trim().toUpperCase();
+  }
+  return sel.value;
+}
+
+// Inserisce il nome dell'operaio EDILE nell'oggetto, al posto del segnaposto
+// "NOME COGNOME" oppure di un nome operaio inserito in precedenza.
+function applicaOperaioEdileAOggetto() {
+  const campo = document.getElementById("dussOggetto");
+  if (!campo) return;
+  if (state.modificaInCorsoDuss) return;
+  const nome = operaioEdileScelto();
+  if (!nome) return;
+  let testo = campo.value || "";
+
+  // Caso 1: c'è ancora il segnaposto NOME COGNOME → lo sostituisco
+  if (testo.includes("NOME COGNOME")) {
+    testo = testo.replace(/NOME COGNOME/g, nome);
+  } else {
+    // Caso 2: era già stato messo un operaio (Sciarra/El Malki o altro). Lo sostituisco
+    // col nuovo. Riconosco lo schema "TECNICO <NOME> ATTIVITA'".
+    const m = testo.match(/TECNICO\s+(.+?)\s+ATTIVITA/i);
+    if (m && m[1]) {
+      testo = testo.replace(m[1], nome);
+    }
+  }
+  campo.value = testo;
+}
+
+function compilaDestinatarioSeEni() {
+  const gruppo = document.getElementById("dussGruppo").value;
+  const campoDest = document.getElementById("dussDestinatario");
+  if (!campoDest) return;
+  if (state.modificaInCorsoDuss) return;
+  const DEST_GILC = "GI.L.C. IMPIANTI SRL\nVIA FRATELLI DI DIO,2 B\n20063 CERNUSCO SUL NAVIGLIO (MI)\nP.IVA 11174510153";
+  const DEST_DUSSMANN = "DUSSMANN SERVICE SRL\nVIA SAN GREGORIO,55\n20124 MILANO (MI)\nP.IVA 00124140211";
+  const attuale = (campoDest.value || "").trim();
+  if (gruppo === "ENI / GI.L.C.") {
+    // Compilo GI.L.C. se il campo è vuoto o conteneva il destinatario Dussmann standard
+    if (attuale === "" || attuale === DEST_DUSSMANN.trim() || attuale.toUpperCase().includes("DUSSMANN")) {
+      campoDest.value = DEST_GILC;
+    }
+  } else {
+    // Tornando a un gruppo non-ENI, se c'era GI.L.C. rimetto Dussmann standard
+    if (attuale.toUpperCase().replace(/[\s.]/g, "").includes("GILCIMPIANTI")) {
+      campoDest.value = DEST_DUSSMANN;
+    }
+  }
+}
+
 function precompilaOggettoDussmann() {
   const gruppo = document.getElementById("dussGruppo").value;
   const tipo = document.getElementById("dussTipo").value;
@@ -2816,6 +3227,12 @@ function precompilaOggettoDussmann() {
   // (così non cancello un oggetto che l'utente ha personalizzato a mano)
   if (nuovo && (attuale === "" || _tuttiModelliOggetto().some(m => m.trim() === attuale))) {
     campo.value = nuovo;
+  }
+
+  // Per i gruppi con menu operaio (EDILE e IMPIANTISTICA), inserisco subito il
+  // nome dell'operaio scelto nel menu al posto di "NOME COGNOME".
+  if (OPERAI_PER_GRUPPO[gruppo]) {
+    applicaOperaioEdileAOggetto();
   }
 }
 
@@ -2876,14 +3293,32 @@ function ricalcolaDussmann() {
 
 // Prenota un numero DUSSMANN (incrementa il contatore su Firebase)
 async function prenotaNumeroDussmann(gruppo) {
-  const key = DUSS_GRUPPO_KEY[gruppo] || "nhood";
-  const docRef = fb.doc(fb.db, "config", dussContatoreDocId(key));
+  // In MODALITÀ TEST restituisco un numero finto senza toccare Firebase
+  // (così la prova funziona e il contatore vero non avanza).
+  if (state.modalitaTest) {
+    return state.prossimoNumeroDussmann.unico || 999;
+  }
+  // NUMERO UNICO: un solo contatore progressivo condiviso da TUTTI i gruppi
+  // (NHOOD, SQUADRA EDILE, SQUADRA IMPIANTISTICA e GI.L.C./ENI). Non più separato
+  // per gruppo. Uso il documento "contatore_dussmann_unico".
+  const docRef = fb.doc(fb.db, "config", "contatore_dussmann_unico");
   const snap = await fb.getDoc(docRef);
   let nuovo;
   if (snap.exists()) {
     nuovo = (snap.data().ultimoNumero || 0) + 1;
   } else {
-    nuovo = (state.prossimoNumeroDussmann[key] != null ? state.prossimoNumeroDussmann[key] : 1);
+    // Prima volta: parto dal massimo tra i vecchi contatori per gruppo (così non
+    // ricomincio da 1 sovrascrivendo numeri già usati) oppure da 1.
+    let maxEsistente = 0;
+    for (const key of ["nhood", "edile", "impiantistica"]) {
+      try {
+        const s = await fb.getDoc(fb.doc(fb.db, "config", dussContatoreDocId(key)));
+        if (s.exists() && (s.data().ultimoNumero || 0) > maxEsistente) {
+          maxEsistente = s.data().ultimoNumero;
+        }
+      } catch (e) {}
+    }
+    nuovo = maxEsistente + 1;
   }
   await fb.setDoc(docRef, { ultimoNumero: nuovo }, { merge: true });
   return nuovo;
@@ -3016,22 +3451,166 @@ async function generaDussmann() {
 }
 
 // Costruisce il .docx DUSSMANN e lo salva (NAS + PDF desktop), riusa l'handler consuntivi
+// Determina la SOTTOCARTELLA FISICA dove va il consuntivo Dussmann, secondo la
+// struttura standard: DUSSMANN GAMA / AAAA / MM_MESE_AAAA / SOTTOCARTELLA.
+// Le 6 sottocartelle fisiche (sempre MAIUSCOLE, nomi esatti) sono:
+//   ENI, NHOOD ORDINARIA + EXTRA, RAI VIA MECENATE, RIMBORSO,
+//   SQUADRA EDILE, SQUADRA IMPIANTISTICA
+// Ordine di priorità del riconoscimento:
+//   1. RIMBORSO  → se il consuntivo è di tipo rimborso (qualsiasi gruppo)
+//   2. ENI       → se il destinatario è GI.L.C. IMPIANTI SRL
+//   3. RAI VIA MECENATE → se l'oggetto cita RAI di Via Mecenate
+//   4. NHOOD ORDINARIA + EXTRA / SQUADRA EDILE / SQUADRA IMPIANTISTICA → dal gruppo
+function determinaSottoCartellaDussmann(c) {
+  const oggetto = (c.oggetto || "").toUpperCase();
+  const destNorm = (c.destinatario || "").toUpperCase().replace(/[\s.]/g, "");
+  const sottoTipo = c.sottoTipo || "";
+
+  // 1. RIMBORSO ha priorità assoluta
+  if (sottoTipo === "rimborso") return "RIMBORSO";
+
+  // 2. GI.L.C. IMPIANTI SRL → ENI (riconosciuto dal gruppo o dal destinatario)
+  const gruppoRaw = (c.gruppo || "").toUpperCase();
+  if (gruppoRaw.includes("ENI") || gruppoRaw.includes("GILC") || gruppoRaw.includes("GI.L.C")) return "ENI";
+  if (destNorm.includes("GILCIMPIANTI") || destNorm.includes("GILC")) return "ENI";
+
+  // 3. RAI VIA MECENATE: riconosco dal gruppo o dall'oggetto (cita RAI + MECENATE)
+  if (gruppoRaw.includes("RAI")) return "RAI VIA MECENATE";
+  if (oggetto.includes("RAI") && oggetto.includes("MECENATE")) return "RAI VIA MECENATE";
+
+  // 4. In base al gruppo del gestionale → nome cartella fisico
+  const gruppo = (c.gruppo || "NHOOD").toUpperCase();
+  if (gruppo.includes("NHOOD")) return "NHOOD ORDINARIA + EXTRA";
+  if (gruppo.includes("EDILE")) return "SQUADRA EDILE";
+  if (gruppo.includes("IMPIANTISTICA")) return "SQUADRA IMPIANTISTICA";
+
+  // Ripiego di sicurezza
+  return "NHOOD ORDINARIA + EXTRA";
+}
+
 async function buildAndSaveDussmann(c) {
   // Salvo il destinatario nella lista condivisa (se nuovo), come per i preventivi
   if (c.destinatario && c.destinatario.trim()) salvaDestinatarioSeNuovo(c.destinatario.trim());
   const { blob, filename } = await buildDocxDussmann(c);
 
-  if (state.isElectron && window.electronAPI.salvaConsuntivo) {
+  // Calcolo la sottocartella fisica secondo la struttura DUSSMANN GAMA standard
+  const sottoCartella = determinaSottoCartellaDussmann(c);
+
+  if (state.isElectron && window.electronAPI.salvaDussmannPersonalizzato) {
+    // Cartella di default proposta: DUSSMANN GAMA / AAAA / MESE / SOTTOCARTELLA
+    // dentro la cartella root configurata.
+    const anno = (c.mese || "").slice(0, 4) || String(new Date().getFullYear());
+    const meseFolder = nomeCartellaMese(c.mese);
+    let cartellaDefault = "";
+    if (state.cartellaRoot) {
+      cartellaDefault = `${state.cartellaRoot}/DUSSMANN GAMA/${anno}/${meseFolder}/${sottoCartella}`;
+    }
+    // Parte FISSA non modificabile: "CONSUNTIVO DUSSMANN NR <numero>"
+    // con il numero vero (crescente). L'utente scrive solo la parte dopo.
+    const prefissoFisso = `CONSUNTIVO DUSSMANN NR ${c.numero}`;
+
+    // Mostro la finestra: prefisso fisso col numero + parte scrivibile + cartella + Salva
+    const scelta = await mostraFinestraSalvaDussmann(prefissoFisso, cartellaDefault);
+    if (!scelta) {
+      showToast("Salvataggio annullato", "warn", 3000);
+      return;
+    }
+
     const arrayBuffer = await blob.arrayBuffer();
     const arr = Array.from(new Uint8Array(arrayBuffer));
-    // Uso tipo "dussmann" così l'handler crea la struttura DUSSMANN > MESE > GRUPPO
-    const r = await window.electronAPI.salvaConsuntivo("dussmann", c.mese, filename, arr, c.gruppo || "NHOOD");
+    const r = await window.electronAPI.salvaDussmannPersonalizzato(scelta.cartella, scelta.nomeFile, arr);
+    if (r.ok) {
+      if (r.pdfPath) {
+        showToast(`✅ Salvato Word + PDF come "${scelta.nomeFile}"`, "success", 6000);
+      } else {
+        showToast(`✅ Word salvato come "${scelta.nomeFile}". ⚠️ PDF non creato: ${r.pdfErrore}`, "warn", 8000);
+      }
+    } else {
+      showToast(`❌ Errore salvataggio: ${r.errore}`, "error", 7000);
+    }
+  } else if (state.isElectron && window.electronAPI.salvaConsuntivo) {
+    // Ripiego (versione vecchia senza finestra): salvataggio automatico
+    const arrayBuffer = await blob.arrayBuffer();
+    const arr = Array.from(new Uint8Array(arrayBuffer));
+    const r = await window.electronAPI.salvaConsuntivo("dussmann_gama", c.mese, filename, arr, c.gruppo || "NHOOD", sottoCartella);
     if (!r.ok && !r.pdfSalvato) {
-      console.warn("Salvataggio DUSSMANN:", r.errore);
+      console.warn("Salvataggio DUSSMANN GAMA:", r.errore);
     }
   } else {
     saveAs(blob, filename);
   }
+}
+
+// Mostra una finestra modale per i DUSSMANN: l'utente scrive il nome del file
+// e conferma/cambia la cartella, poi clicca Salva. Ritorna {cartella, nomeFile}
+// oppure null se annulla.
+function mostraFinestraSalvaDussmann(prefissoFisso, cartellaDefault) {
+  return new Promise((resolve) => {
+    // Rimuovo eventuale finestra precedente
+    const vecchia = document.getElementById("overlaySalvaDuss");
+    if (vecchia) vecchia.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "overlaySalvaDuss";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;";
+
+    const box = document.createElement("div");
+    box.style.cssText = "background:#fff;border-radius:12px;padding:24px;width:560px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,0.3);font-family:inherit;";
+    const prefissoSafe = (prefissoFisso || "CONSUNTIVO DUSSMANN NR").replace(/"/g, "&quot;");
+    box.innerHTML = `
+      <h2 style="margin:0 0 6px;font-size:19px;color:#1f2937;">💾 Salva consuntivo DUSSMANN</h2>
+      <p style="margin:0 0 18px;font-size:13px;color:#6b7280;">Il numero è già inserito e non si può cancellare. Scrivi solo il resto del nome, poi premi Salva. Verranno creati il Word e il PDF.</p>
+
+      <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Nome del file</label>
+      <div style="display:flex;align-items:stretch;gap:0;margin-bottom:4px;border:2px solid #d1d5db;border-radius:8px;overflow:hidden;">
+        <span id="dussSalvaPrefisso" style="display:flex;align-items:center;padding:10px 10px;background:#eef2ff;color:#4338ca;font-weight:700;font-size:13px;white-space:nowrap;border-right:2px solid #d1d5db;">${prefissoSafe}</span>
+        <input id="dussSalvaNome" type="text" placeholder="scrivi il resto (es. QUOTA DISTACCO PIETRO RAI)" style="flex:1;box-sizing:border-box;padding:10px 12px;border:none;outline:none;font-size:14px;">
+      </div>
+      <p style="margin:0 0 16px;font-size:11px;color:#9ca3af;">La parte azzurra "${prefissoSafe}" è fissa. Non serve scrivere .docx o .pdf.</p>
+
+      <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">Cartella di salvataggio</label>
+      <div style="display:flex;gap:8px;margin-bottom:20px;">
+        <input id="dussSalvaCartella" type="text" value="${(cartellaDefault || "").replace(/"/g, "&quot;")}" style="flex:1;box-sizing:border-box;padding:10px 12px;border:2px solid #d1d5db;border-radius:8px;font-size:12px;color:#4b5563;background:#f9fafb;">
+        <button id="dussSalvaSfoglia" style="white-space:nowrap;padding:10px 14px;border:none;border-radius:8px;background:#6366f1;color:#fff;font-weight:600;cursor:pointer;font-size:13px;">📁 Cambia</button>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button id="dussSalvaAnnulla" style="padding:10px 20px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-weight:600;cursor:pointer;font-size:14px;">Annulla</button>
+        <button id="dussSalvaConferma" style="padding:10px 24px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer;font-size:14px;">✅ Salva</button>
+      </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const inputNome = box.querySelector("#dussSalvaNome");
+    const inputCartella = box.querySelector("#dussSalvaCartella");
+    inputNome.focus();
+
+    const chiudi = (risultato) => { overlay.remove(); resolve(risultato); };
+
+    // Pulsante "Cambia" cartella: apre il dialog di Windows/Mac
+    box.querySelector("#dussSalvaSfoglia").onclick = async () => {
+      try {
+        const r = await window.electronAPI.scegliCartellaLibera(inputCartella.value || cartellaDefault);
+        if (r && r.ok && r.cartella) inputCartella.value = r.cartella;
+      } catch (e) { console.warn("Scelta cartella:", e); }
+    };
+
+    box.querySelector("#dussSalvaAnnulla").onclick = () => chiudi(null);
+    overlay.onclick = (e) => { if (e.target === overlay) chiudi(null); };
+
+    box.querySelector("#dussSalvaConferma").onclick = () => {
+      const resto = (inputNome.value || "").trim();
+      const cartella = (inputCartella.value || "").trim();
+      if (!cartella) { inputCartella.style.borderColor = "#dc2626"; return; }
+      // Nome finale = prefisso fisso (col numero) + quello che ha scritto l'utente
+      const nomeFinale = resto ? `${prefissoFisso} ${resto}` : prefissoFisso;
+      chiudi({ nomeFile: nomeFinale, cartella });
+    };
+
+    // Invio = salva
+    inputNome.onkeydown = (e) => { if (e.key === "Enter") box.querySelector("#dussSalvaConferma").click(); };
+  });
 }
 
 async function buildDocxDussmann(c) {
@@ -3188,7 +3767,7 @@ window.modificaDussmann = async (id) => {
   document.getElementById("dussOggetto").value = c.oggetto || "";
   document.getElementById("dussDestinatario").value = c.destinatario || "DUSSMANN SERVICE SRL\nVIA SAN GREGORIO,55\n20124 MILANO (MI)\nP.IVA 00124140211";
   document.getElementById("dussOre").value = c.ore || 0;
-  document.getElementById("dussPagamenti").value = c.pagamenti || "";
+  document.getElementById("dussPagamenti").value = c.pagamenti || "BB 60GDFFM";
 
   if (c.sottoTipo === "distacco") {
     document.getElementById("dussRetribuzione").value = c.retribuzione || 0;
@@ -3250,17 +3829,19 @@ window.eliminaDussmann = async (id, numero) => {
     return;
   }
 
-  // Cancello i file (docx + pdf) dalla cartella DUSSMANN
+  // Cancello i file (docx + pdf) dalla cartella DUSSMANN GAMA
   let fileMsg = "";
   if (state.isElectron && dati && window.electronAPI.eliminaFileConsuntivo) {
     try {
-      const tipoLabel = dati.sottoTipo === "distacco" ? "DISTACCO" : "SERVIZIO";
+      const tipoLabel = dati.sottoTipo === "distacco" ? "DISTACCO" : (dati.sottoTipo === "rimborso" ? "RIMBORSO" : "SERVIZIO");
       const oggBreve = (dati.oggetto || "").substring(0, 40).replace(/[/\\?%*:|"<>]/g, "");
       const filenameDocx = `CONSUNTIVO DUSSMANN NR ${numero} ${tipoLabel} ${oggBreve}.docx`;
-      const r = await window.electronAPI.eliminaFileConsuntivo("dussmann", dati.mese, filenameDocx, dati.gruppo);
+      // Calcolo la stessa sottocartella usata in fase di salvataggio
+      const sottoCartella = determinaSottoCartellaDussmann(dati);
+      const r = await window.electronAPI.eliminaFileConsuntivo("dussmann_gama", dati.mese, filenameDocx, dati.gruppo, sottoCartella);
       if (r.ok && r.trovatoQualcosa) fileMsg = " (file eliminati)";
       else fileMsg = " — ⚠️ file non trovato, cancellalo a mano";
-    } catch (e) { console.warn("Eliminazione file DUSSMANN:", e); }
+    } catch (e) { console.warn("Eliminazione file DUSSMANN GAMA:", e); }
   }
 
   showToast(`🗑️ DUSSMANN NR ${numero} eliminato${fileMsg}`, "success", 6000);
@@ -5264,17 +5845,11 @@ function setupImpostazioniTab() {
     btnForzaPrev.addEventListener("click", () => forzaNumero("preventivo"));
   }
 
-  // DUSSMANN: forza numero per ogni gruppo (numerazione separata)
-  const mapBtnDuss = {
-    "btnForzaNumeroDussmannNhood": { nome: "NHOOD", key: "nhood", input: "forzaNumeroDussmannNhood" },
-    "btnForzaNumeroDussmannEdile": { nome: "SQUADRA EDILE", key: "edile", input: "forzaNumeroDussmannEdile" },
-    "btnForzaNumeroDussmannImpiantistica": { nome: "SQUADRA IMPIANTISTICA", key: "impiantistica", input: "forzaNumeroDussmannImpiantistica" }
-  };
-  Object.keys(mapBtnDuss).forEach(btnId => {
-    const cfg = mapBtnDuss[btnId];
-    const btn = document.getElementById(btnId);
-    if (btn) btn.addEventListener("click", () => forzaNumeroDussmannGruppo(cfg.key, cfg.nome, cfg.input));
-  });
+  // DUSSMANN: forza il numero (contatore UNICO per tutti i gruppi)
+  const btnForzaDuss = document.getElementById("btnForzaNumeroDussmannNhood");
+  if (btnForzaDuss) {
+    btnForzaDuss.addEventListener("click", () => forzaNumeroDussmannUnico("forzaNumeroDussmannNhood"));
+  }
 
   // Preventivo: scegli cartella
   const btnCartPrev = document.getElementById("btnCartellaPreventivi");
@@ -5362,18 +5937,19 @@ async function forzaNumero(tipo) {
 }
 
 // Forza il numero di partenza per uno specifico gruppo DUSSMANN
-async function forzaNumeroDussmannGruppo(key, nomeGruppo, inputId) {
+async function forzaNumeroDussmannUnico(inputId) {
   const n = parseInt(document.getElementById(inputId).value);
   if (!n || n < 1) {
     showToast("⚠️ Inserisci un numero valido", "warn");
     return;
   }
-  if (!confirm(`Forzare il prossimo numero DUSSMANN per ${nomeGruppo} a ${n}?\n\nIl prossimo documento di ${nomeGruppo} sarà NR ${n}.`)) return;
-  await fb.setDoc(fb.doc(fb.db, "config", dussContatoreDocId(key)), {
+  if (!confirm(`Forzare il prossimo numero DUSSMANN a ${n}?\n\nIl prossimo consuntivo DUSSMANN (di qualsiasi gruppo) sarà NR ${n}.`)) return;
+  // Scrivo sul contatore UNICO condiviso da tutti i gruppi
+  await fb.setDoc(fb.doc(fb.db, "config", "contatore_dussmann_unico"), {
     ultimoNumero: n - 1,
     aggiornatoIl: new Date().toISOString()
   }, { merge: true });
-  showToast(`✅ Prossimo DUSSMANN ${nomeGruppo} impostato a ${n}`, "success");
+  showToast(`✅ Prossimo DUSSMANN impostato a ${n}`, "success");
 }
 
 async function loadSettings() {
