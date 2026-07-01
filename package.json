@@ -1,7 +1,7 @@
 {
   "name": "gama-consuntivi",
   "productName": "Gama Consuntivi",
-  "version": "3.33.1",
+  "version": "3.33.2",
   "description": "Generatore Consuntivi CBRE + CREVAL per Gama Service",
   "main": "main.js",
   "author": {
@@ -68,8 +68,20 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.business",
       "artifactName": "Gama-Consuntivi-${version}-${arch}.${ext}",
@@ -80,7 +92,26 @@
       }
     },
     "dmg": {
-      "title": "Gama Consuntivi ${version}"
+      "title": "Gama Consuntivi ${version}",
+      "background": null,
+      "icon": null,
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 140,
+          "y": 200,
+          "type": "file"
+        },
+        {
+          "x": 400,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "nsis": {
       "oneClick": true,

@@ -1,0 +1,207 @@
+
+==============================================================
+          GAMA CONSUNTIVI - TEST AUTOMATICO COMPLETO
+==============================================================
+
+  Versione testata: 3.33.2
+  Data test: 01/07/2026, 09:37:59
+
+=== FASE A - INTEGRITÀ FILE (sintassi JavaScript) ===
+    [OK] main.js (processo principale) - sintassi valida
+    [OK] preload.js (ponte sicurezza) - sintassi valida
+    [OK] src/app.js (logica app) - sintassi valida
+
+=== FASE B - BILANCIAMENTO PARENTESI ===
+    [OK] main.js (processo principale) - graffe bilanciate
+    [OK] main.js (processo principale) - quadre bilanciate
+    [OK] preload.js (ponte sicurezza) - graffe bilanciate
+    [OK] preload.js (ponte sicurezza) - quadre bilanciate
+    [OK] src/app.js (logica app) - graffe bilanciate
+    [OK] src/app.js (logica app) - quadre bilanciate
+
+=== FASE C3 - STRUTTURA DUSSMANN GAMA (cartelle standard) ===
+    [OK] Funzione determinaSottoCartellaDussmann
+    [OK] Sottocartella RIMBORSO
+    [OK] Sottocartella ENI
+    [OK] Sottocartella RAI VIA MECENATE
+    [OK] Sottocartella NHOOD ORDINARIA + EXTRA
+    [OK] Sottocartella SQUADRA EDILE
+    [OK] Sottocartella SQUADRA IMPIANTISTICA
+    [OK] Riconoscimento RAI da oggetto
+    [OK] Rimborso ha priorita (primo controllo)
+    [OK] Tipo dussmann_gama usato
+    [OK] main.js: struttura DUSSMANN GAMA/AAAA
+    [OK] main.js: anno ricavato dal mese
+    [OK] Finestra salva personalizzato (solo Dussmann)
+    [OK] Handler salva-dussmann-personalizzato
+    [OK] Handler scegli-cartella-libera
+    [OK] Dussmann usa finestra salva
+    [OK] Prefisso fisso con numero (CONSUNTIVO DUSSMANN NR)
+    [OK] Prefisso non modificabile (span, non input)
+    [OK] Nome finale = prefisso + resto
+    [OK] Numero sempre presente anche senza testo
+    [OK] Salva crea sia docx che pdf
+    [OK] Gruppo ENI / GI.L.C. nei modelli
+    [OK] ENI: operaio BRUSENKO VALENTYN fisso
+    [OK] ENI: oggetto SAN DONATO MILANESE
+    [OK] Opzione ENI nel menu HTML
+    [OK] Compila destinatario GI.L.C. automatico
+    [OK] ENI riconosciuto dal gruppo (cartella)
+    [OK] Menu operaio EDILE in HTML
+    [OK] Operaio NICOLA SCIARRA nel menu
+    [OK] Operaio EL MALKI AHMED nel menu
+    [OK] Opzione Altro operaio EDILE
+    [OK] Funzione applicaOperaioEdileAOggetto
+    [OK] Operaio EDILE sostituito nell'oggetto
+    [OK] Menu operaio visibile solo per EDILE
+    [OK] Operai IMPIANTISTICA definiti
+    [OK] Operaio ERION DORACI
+    [OK] Operaio SIDHON BISHOUNADI
+    [OK] Tabella OPERAI_PER_GRUPPO
+    [OK] Gruppo RAI VIA MECENATE nei modelli
+    [OK] Pagamenti DUSSMANN precompilato BB 60GDFFM
+    [OK] RAI: operaio CASCIELLO PIETRO fisso
+    [OK] RAI: commessa NR 410
+    [OK] Opzione RAI nel menu HTML
+    [OK] RAI riconosciuto dal gruppo (cartella)
+
+=== FASE C2 - MODALITA TEST (no scritture Firebase) ===
+    [OK] Handler get-modalita-test in main.js
+    [OK] Legge variabile GAMA_TEST
+    [OK] getModalitaTest esposto nel preload
+    [OK] Funzione attivaModalitaTestSeRichiesto
+    [OK] Blocca setDoc in test
+    [OK] Blocca updateDoc in test
+    [OK] Blocca deleteDoc in test
+    [OK] Blocca addDoc in test
+    [OK] Banner rosso modalita test
+    [OK] File TEST-GAMA.bat presente
+    [OK] File TEST-GAMA-MAC.command presente
+    [OK] prenotaNumero salta Firebase in test
+    [OK] prenotaNumeroDussmann salta Firebase in test
+    [OK] prenotaNumeroPreventivo salta Firebase in test
+
+=== FASE C - CATENA IPC (preload ↔ main) ===
+    [OK] Almeno 1 funzione IPC definita
+    [OK] Tutte le 34 funzioni hanno il loro handler
+
+=== FASE D - GENERAZIONE PDF (Windows + Mac) ===
+    [OK] Conversione Windows (PowerShell .ps1)
+    [OK] Conversione Mac (AppleScript)
+    [OK] Fallback LibreOffice su Mac
+    [OK] Fallback LibreOffice su Linux/test
+    [OK] Sanificazione nome file PDF
+    [OK] Gestione formato PDF Word (wdFormatPDF=17)
+    [OK] Pulizia file temporanei .ps1
+
+=== FASE E - PDF SUL DESKTOP (3 pulsanti) ===
+    [OK] Funzione salvaAnteprimaPdf esiste
+    [OK] Anteprima preventivo usa template corretto
+    [OK] Anteprima → prefisso ANTEPRIMA (true)
+    [OK] Genera consuntivo → PDF Desktop senza prefisso (false)
+    [OK] Genera preventivo → PDF Desktop senza prefisso (false)
+    [OK] Handler PDF Desktop in main
+    [OK] Parametro isAnteprima gestito
+    [OK] Mac: PDF generato in locale poi spostato (no problemi NAS)
+    [OK] Mac: Word come prima scelta
+    [OK] Mac: fallback LibreOffice
+    [OK] Mac: messaggio chiaro se manca Word/LibreOffice
+    [OK] Windows: PowerShell per conversione
+    [OK] Windows: rileva Word mancante
+    [OK] Temp conversione nome pulito (no apostrofi)
+
+=== FASE F - PREVENTIVI (accetta / elimina / doppioni) ===
+    [OK] Accettazione salva in collection consuntivi
+    [OK] Accettazione usa tipo 'cbre'
+    [OK] Pulizia righe precedenti (anti-doppione)
+    [OK] Deduplica preventivi accettati
+    [OK] Eliminazione cancella riga consuntivi
+    [OK] Eliminazione rigenera Excel forzato
+    [OK] Cambio mese rigenera vecchio mese
+    [OK] Tabella voci: funzione costruisci XML
+    [OK] Tabella voci: riga dinamica nel form
+    [OK] Tabella voci: calcolo totali
+    [OK] Tabella voci: lettura voci
+    [OK] Tabella voci: unità di misura con 'a corpo'
+    [OK] Tabella voci: U.M. scrivibile (Altro)
+    [OK] Tabella voci: 5 colonne header
+    [OK] Tabella voci: calcolo P.Totale (qta×pu)
+    [OK] Tabella voci: sostituisce tabella Word
+    [OK] Tabella voci: pulsante aggiungi
+
+=== FASE G - CONSUNTIVI (campi e calcoli) ===
+    [OK] Ore di viaggio presente
+    [OK] Calcolo costo viaggio
+    [OK] Nascondi 'A corpo'
+    [OK] ODL multipli
+    [OK] Colori righe manuali
+    [OK] Ore extra
+    [OK] Totale a mano
+    [OK] Funzione calcolaTotaleConsuntivo
+
+=== FASE H - EXCEL (generazione celle) ===
+    [OK] applicaModificheCelle 2 passate
+    [OK] Inserimento celle in righe vuote
+    [OK] Formato numero italiano (it-IT)
+    [OK] Rigenerazione forzata da template
+    [OK] Funzione aggiornaExcelMese
+
+=== FASE I - TEST LOGICI (calcoli reali) ===
+    [OK] Calcolo totale 3 offerte (=5000€)
+    [OK] Calcolo ore+viaggio+materiale (=866€)
+    [OK] Mappatura colori pagamento (roundtrip)
+    [OK] Sanificazione rimuove punti
+    [OK] Sanificazione tronca nomi lunghi (≤100)
+    [OK] Menu mesi: 12 mesi anno corrente (2026)
+    [OK] Ciclo preventivo: accetta → appare
+    [OK] Ciclo preventivo: elimina → sparisce
+    [OK] Deduplica: 2 doppioni → 1 riga
+    [OK] Deduplica: consuntivo normale intatto
+
+=== FASE L - PACKAGING (file necessari) ===
+    [OK] package.json presente
+    [OK] PUBBLICA-AGGIORNAMENTO.bat presente
+    [OK] Cartella assets presente
+    [OK] Template CBRE presente
+    [OK] Template preventivo presente
+    [OK] Timbro presente
+    [OK] Workflow GitHub Actions (build Mac)
+
+=== FASE N - SISTEMA DI ATTIVAZIONE (key) ===
+    [OK] File attivazione.js presente
+    [OK] File attivazione.html presente
+    [OK] Genera codice macchina (formato XXXX-XXXX-XXXX)
+    [OK] Codice macchina STABILE (Mac: ignora MAC randomizzati)
+    [OK] Genera key (formato XXXXX-XXXXX-XXXXX-XXXXX)
+    [OK] Key corretta viene accettata
+    [OK] Key sbagliata viene rifiutata
+    [OK] Tollera key in minuscolo
+    [OK] Key di un altro PC viene rifiutata (1 key = 1 PC)
+    [OK] Codice macchina STABILE su 5 chiamate (no riattivazione)
+    [OK] Rete di sicurezza: key autentica per codice memorizzato
+    [OK] Segreto di attivazione configurato
+    [OK] Attivazione integrata in main.js
+    [OK] Caricamento attivazione a prova di crash (try/catch)
+    [OK] Handler codice macchina
+    [OK] Handler verifica key
+    [OK] Controllo attivazione all'avvio
+    [OK] attivazione.js incluso nella build (.exe)
+    [OK] attivazione.html incluso nella build (.exe)
+
+=== FASE M - AMBIENTE REALE (Windows) ===
+    Sistema operativo rilevato: Windows (win32)
+    Versione Node.js: v24.14.1
+    [OK] Microsoft Word installato (per PDF Windows)
+    [OK] PowerShell disponibile
+
+==============================================================
+                      REPORT FINALE
+==============================================================
+  Versione:        3.33.2
+  Test totali:     158
+  Test superati:   158
+  Test falliti:    0
+  Percentuale:     100%
+==============================================================
+
+  [OK] TUTTO OK - Nessun errore. La release e' pronta per la pubblicazione!
